@@ -1,112 +1,97 @@
 import os
-import requests
 import time
-from datetime import datetime
+import datetime
+import sys
+import requests
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.chrome.options import Options
-from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
-from dotenv import load_dotenv
 
-load_dotenv()
-USERNAME = os.getenv("NPK")
-PASSWORD = os.getenv("PASSWORD")
-TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
-TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
-
-URL_LOGIN = "https://dani.perhutani.co.id"
-LIBUR_API = "https://api-harilibur.vercel.app/api"
-
-def send_telegram(msg: str):
-    token = TELEGRAM_TOKEN
-    chat_id = TELEGRAM_CHAT_ID
-    if not token or not chat_id:
-        print("[INFO] TELEGRAM_TOKEN/TELEGRAM_CHAT_ID belum di-set; lewati notifikasi.")
-        return
+# === CEK HARI LIBUR DAN WEEKEND ===
+def is_holiday():
+    today = datetime.date.today().strftime("%Y-%m-%d")
     try:
-        url = f"https://api.telegram.org/bot{token}/sendMessage"
-        requests.post(url, data={"chat_id": chat_id, "text": msg}, timeout=15)
+        url = "https://raw.githubusercontent.com/guangrei/APIHariLibur/main/calendar.json"
+        data = requests.get(url).json()
+        if today in data and data[today]['holiday']:
+            print("📌 Hari ini libur nasional:", data[today]['deskripsi'])
+            return True
     except Exception as e:
-        print("[WARN] Gagal kirim Telegram:", e)
+        print("⚠️ Gagal cek API Hari Libur:", e)
+    return False
 
-def is_libur(date_str: str) -> bool:
-    try:
-        resp = requests.get(LIBUR_API, timeout=20)
-        resp.raise_for_status()
-        data = resp.json()
-        for libur in data:
-            if libur.get("is_national") and libur.get("holiday_date") == date_str:
-                return True
-        return False
-    except Exception as e:
-        print("[WARN] Gagal cek API libur:", e)
-        return False
+today_num = datetime.datetime.today().weekday()  # Senin=0 ... Minggu=6
+if today_num >= 5:  # Sabtu/Minggu
+    print("🚫 Hari ini weekend, tidak perlu presensi")
+    sys.exit()
 
-def build_driver() -> webdriver.Chrome:
-    chrome_options = Options()
-    chrome_options.add_argument("--headless=new")
-    chrome_options.add_argument("--no-sandbox")
-    chrome_options.add_argument("--disable-dev-shm-usage")
-    chrome_options.add_argument("--disable-gpu")
-    chrome_options.add_argument("--window-size=1920,1080")
-    chrome_options.add_argument("--user-agent=Mozilla/5.0")
-    chrome_binary = os.getenv("CHROME_BINARY", "/usr/bin/chromium")
-    chromedriver_path = os.getenv("CHROMEDRIVER", "/usr/bin/chromedriver")
-    if os.path.exists(chrome_binary):
-        chrome_options.binary_location = chrome_binary
-    service = Service(chromedriver_path)
-    driver = webdriver.Chrome(service=service, options=chrome_options)
-    driver.set_page_load_timeout(60)
-    return driver
+if is_holiday():
+    print("🚫 Hari ini libur nasional, tidak perlu presensi")
+    sys.exit()
 
-def presensi():
-    now = datetime.now()
-    today_str = now.strftime("%Y-%m-%d")
-    weekday = now.weekday()
+# === SETUP SELENIUM HEADLESS ===
+chrome_options = Options()
+chrome_options.add_argument("--headless")
+chrome_options.add_argument("--no-sandbox")
+chrome_options.add_argument("--disable-dev-shm-usage")
+driver = webdriver.Chrome(options=chrome_options)
 
-    if weekday >= 5:
-        send_telegram("📅 Weekend, presensi skip.")
-        return
-    if is_libur(today_str):
-        send_telegram("📅 Libur nasional, presensi skip.")
-        return
+wait = WebDriverWait(driver, 20)
 
-    driver = build_driver()
-    wait = WebDriverWait(driver, 25)
+# === LOGIN KE WEBSITE ===
+driver.get("https://dani.perhutani.co.id")
 
-    try:
-        driver.get(URL_LOGIN)
-        wait.until(EC.presence_of_element_located((By.NAME, "npk"))).send_keys(USERNAME or "")
-        driver.find_element(By.NAME, "password").send_keys(PASSWORD or "")
-        driver.find_element(By.NAME, "password").send_keys(Keys.RETURN)
-        time.sleep(2)
+username = os.getenv("USERNAME")
+password = os.getenv("PASSWORD")
 
-        page_source = driver.page_source
-        if "Klik Disini Untuk Presensi" in page_source:
-            btn = wait.until(EC.element_to_be_clickable((By.XPATH, "//div[contains(text(), 'Klik Disini Untuk Presensi')]")))
-            btn.click()
-            time.sleep(2)
-            send_telegram("✅ Presensi berhasil dilakukan.")
-            return
+driver.find_element(By.NAME, "username").send_keys(username)
+driver.find_element(By.NAME, "password").send_keys(password, Keys.RETURN)
 
-        if any(s in page_source for s in ["Sudah Check In", "Sudah Check Out", "Sudah Presensi"]):
-            send_telegram("✅ Sudah presensi, tidak perlu klik.")
-            return
+print("✅ Login berhasil")
 
-        send_telegram("⚠️ Tidak menemukan tombol/status presensi di halaman.")
-    except Exception as e:
-        send_telegram(f"❌ Gagal presensi: {e}")
-    finally:
-        try:
-            driver.quit()
-        except Exception:
-            pass
+# === HANDLE POPUP NEXT/FINISH SEBELUM PRESENSI ===
+try:
+    while True:
+        # Tunggu kalau ada tombol Next/Finish
+        popup_btn = wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, "button.swal2-confirm")))
+        btn_text = popup_btn.text.strip().lower()
+        if "next" in btn_text:
+            print("➡️ Klik Next")
+            popup_btn.click()
+            time.sleep(1)
+        elif "finish" in btn_text:
+            print("✅ Klik Finish")
+            popup_btn.click()
+            time.sleep(1)
+            break
+        else:
+            print("ℹ️ Popup tidak dikenal:", btn_text)
+            popup_btn.click()
+            time.sleep(1)
+except Exception as e:
+    print("⚠️ Tidak ada popup Next/Finish:", e)
 
-if __name__ == "__main__":
-    missing = [k for k in ["NPK", "PASSWORD", "TELEGRAM_TOKEN", "TELEGRAM_CHAT_ID"] if not os.getenv(k)]
-    if missing:
-        print(f"[WARN] Variabel env berikut belum di-set: {', '.join(missing)}")
-    presensi()
+# === KLIK TOMBOL PRESENSI (HALAMAN UTAMA) ===
+try:
+    presensi_btn = wait.until(EC.element_to_be_clickable((By.XPATH, "//button[contains(text(),'Klik disini untuk presensi')]")))
+    presensi_btn.click()
+    print("🟠 Klik tombol presensi utama")
+    time.sleep(2)
+except Exception as e:
+    print("❌ Gagal klik tombol presensi utama:", e)
+    driver.quit()
+    sys.exit()
+
+# === KLIK TOMBOL PRESENSI DI POPUP TERAKHIR ===
+try:
+    popup_presensi = wait.until(EC.element_to_be_clickable((By.XPATH, "//button[contains(text(),'Klik disini untuk presensi')]")))
+    popup_presensi.click()
+    print("✅ Presensi berhasil")
+    time.sleep(2)
+except Exception as e:
+    print("❌ Gagal klik tombol presensi popup:", e)
+
+driver.quit()
