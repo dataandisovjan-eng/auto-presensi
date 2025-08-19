@@ -1,113 +1,117 @@
 import os
 import time
+import logging
 import requests
 from datetime import datetime
 from selenium import webdriver
-from selenium.webdriver.common.by import By
 from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 
-# ===== Cek Hari Libur Nasional =====
+# ===== Setup Logging =====
+log_file = f"log_presensi_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
+logging.basicConfig(
+    filename=log_file,
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S"
+)
+
+def log_print(msg):
+    print(msg)
+    logging.info(msg)
+
+# ===== Konfigurasi dari Secrets GitHub =====
+USERNAME = os.getenv("PRESENSI_USERNAME")
+PASSWORD = os.getenv("PRESENSI_PASSWORD")
+SITE_URL = "https://dani.perhutani.co.id"
+
+# ===== Cek Hari Libur & Weekend =====
 def is_holiday():
     today = datetime.now().strftime("%Y-%m-%d")
-    year = datetime.now().year
-    month = datetime.now().month
-    
+    weekday = datetime.now().weekday()  # 0=Senin, 6=Minggu
+    if weekday >= 5:
+        log_print("🚫 Hari ini Sabtu/Minggu. Skip presensi.")
+        return True
     try:
-        url = f"https://api-harilibur.vercel.app/api?month={month}&year={year}"
-        response = requests.get(url, timeout=10)
-        data = response.json()
-
-        for holiday in data:
-            if holiday.get("is_national_holiday") and holiday["holiday_date"] == today:
-                print(f"❌ Hari ini libur nasional: {holiday['holiday_name']}")
-                return True
-        return False
+        resp = requests.get("https://dayoffapi.vercel.app/api", timeout=10)
+        holidays = resp.json().get("holidays", [])
+        if today in holidays:
+            log_print("🚫 Hari libur nasional. Skip presensi.")
+            return True
     except Exception as e:
-        print(f"⚠️ Gagal cek API Hari Libur: {e}")
-        return False
-
-# ===== Setup Selenium =====
-def setup_driver():
-    chrome_options = Options()
-    chrome_options.add_argument("--headless")  
-    chrome_options.add_argument("--no-sandbox")
-    chrome_options.add_argument("--disable-dev-shm-usage")
-    return webdriver.Chrome(options=chrome_options)
+        log_print(f"⚠️ Gagal cek API Hari Libur: {e}")
+    return False
 
 # ===== Proses Presensi =====
 def presensi():
-    username = os.getenv("PRESENSI_USERNAME")
-    password = os.getenv("PRESENSI_PASSWORD")
-    url = "https://dani.perhutani.co.id"
+    options = Options()
+    options.add_argument("--headless=new")
+    options.add_argument("--no-sandbox")
+    options.add_argument("--disable-dev-shm-usage")
 
-    if not username or not password:
-        print("❌ Username/password tidak ditemukan di Secrets.")
-        return
-
-    driver = setup_driver()
+    driver = webdriver.Chrome(options=options)
     wait = WebDriverWait(driver, 20)
 
     try:
-        print("🔗 Membuka website...")
-        driver.get(url)
+        log_print("🌐 Membuka halaman login...")
+        driver.get(SITE_URL)
 
         # Login
-        wait.until(EC.presence_of_element_located((By.NAME, "username"))).send_keys(username)
-        wait.until(EC.presence_of_element_located((By.NAME, "password"))).send_keys(password)
+        wait.until(EC.presence_of_element_located((By.NAME, "username"))).send_keys(USERNAME)
+        driver.find_element(By.NAME, "password").send_keys(PASSWORD)
         driver.find_element(By.XPATH, "//button[contains(text(),'Login')]").click()
-        print("✅ Login berhasil")
+        log_print("✅ Login berhasil")
 
-        # Handle popup "Next" sampai muncul "Finish"
+        # Klik semua popup "Next" sampai habis
         while True:
             try:
                 next_btn = wait.until(
-                    EC.presence_of_element_located((By.XPATH, "//button[contains(text(),'Next')]"))
+                    EC.presence_of_element_located((By.XPATH, "//button[contains(text(),'Next') or contains(text(),'Finish')]"))
                 )
+                btn_text = next_btn.text
                 next_btn.click()
-                print("➡️ Klik Next")
+                log_print(f"➡️ Klik tombol popup: {btn_text}")
                 time.sleep(1)
+                if "Finish" in btn_text:
+                    break
             except:
-                try:
-                    finish_btn = driver.find_element(By.XPATH, "//button[contains(text(),'Finish')]")
-                    finish_btn.click()
-                    print("✅ Klik Finish")
-                except:
-                    print("ℹ️ Tidak ada popup Next/Finish lagi.")
                 break
 
-        # Klik tombol utama presensi
+        # Klik tombol presensi utama
         presensi_btn = wait.until(
             EC.presence_of_element_located((By.XPATH, "//button[contains(text(),'Klik disini untuk presensi')]"))
         )
         presensi_btn.click()
-        print("🟠 Klik tombol presensi utama")
+        log_print("🟠 Klik tombol presensi utama")
 
-        # Klik tombol popup presensi
+        # Klik tombol presensi dalam popup terakhir
         popup_btn = wait.until(
             EC.presence_of_element_located((By.XPATH, "//button[contains(text(),'Klik disini untuk presensi')]"))
         )
         popup_btn.click()
-        print("✅ Presensi berhasil")
+        log_print("✅ Presensi berhasil")
+
+        # Simpan screenshot
+        screenshot_file = f"screenshot_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png"
+        driver.save_screenshot(screenshot_file)
+        log_print(f"📸 Screenshot disimpan: {screenshot_file}")
+
+        # Simpan HTML terakhir
+        html_file = f"page_source_{datetime.now().strftime('%Y%m%d_%H%M%S')}.html"
+        with open(html_file, "w", encoding="utf-8") as f:
+            f.write(driver.page_source)
+        log_print(f"📝 HTML source disimpan: {html_file}")
 
     except Exception as e:
-        print(f"❌ Error saat presensi: {e}")
+        log_print(f"❌ Error saat presensi: {e}")
     finally:
         driver.quit()
 
-# ===== Main Program =====
+# ===== Main =====
 if __name__ == "__main__":
-    today = datetime.now().strftime("%A")
-
-    # Skip weekend
-    if today in ["Saturday", "Sunday"]:
-        print("❌ Hari ini weekend, skip presensi.")
-        exit(0)
-
-    # Skip libur nasional
-    if is_holiday():
-        exit(0)
-
-    # Jalankan presensi
-    presensi()
+    if not is_holiday():
+        presensi()
+    else:
+        log_print("Presensi dilewati karena hari libur/weekend.")
