@@ -2,8 +2,8 @@ name: Presensi Otomatis
 
 on:
   schedule:
-    # Jam 06:45 & 16:30 WIB → konversi ke UTC (WIB - 7 jam)
     - cron: "45 23 * * *"   # 06:45 WIB
+    - cron: "05 9 * * *"    # 16:05 WIB
     - cron: "30 9 * * *"    # 16:30 WIB
   workflow_dispatch:
     inputs:
@@ -36,13 +36,10 @@ jobs:
 
       - name: Jalankan Presensi
         env:
-          # === Secrets untuk user ===
           USER1_USERNAME: ${{ secrets.USER1_USERNAME }}
           USER1_PASSWORD: ${{ secrets.USER1_PASSWORD }}
           USER2_USERNAME: ${{ secrets.USER2_USERNAME }}
           USER2_PASSWORD: ${{ secrets.USER2_PASSWORD }}
-
-          # === Opsi manual ===
           FORCE_USER: ${{ github.event.inputs.force_user }}
           FORCE_MODE: ${{ github.event.inputs.force_mode }}
         run: python main.py
