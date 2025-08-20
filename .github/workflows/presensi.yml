@@ -2,12 +2,21 @@ name: Presensi
 
 on:
   schedule:
-    # UTC = Waktu Jakarta - 7 jam
-    - cron: "45 23 * * *"   # 06:45 WIB (Pak Budi check-in)
-    - cron: "5 9 * * *"     # 16:05 WIB (Pak Budi check-out)
-    - cron: "0 0 * * *"     # 07:00 WIB (Bu Sari check-in)
-    - cron: "30 9 * * *"    # 16:30 WIB (Bu Sari check-out)
+    # UTC = WIB - 7
+    - cron: "45 23 * * *"   # 06:45 WIB - Pak Budi check-in
+    - cron: "5 9 * * *"     # 16:05 WIB - Pak Budi check-out
+    - cron: "0 0 * * *"     # 07:00 WIB - Bu Sari check-in
+    - cron: "30 9 * * *"    # 16:30 WIB - Bu Sari check-out
   workflow_dispatch:
+    inputs:
+      force_user:
+        description: "ID user (misal: user1 / user2)"
+        required: false
+        default: ""
+      force_mode:
+        description: "Mode presensi (check-in / check-out)"
+        required: false
+        default: ""
 
 jobs:
   presensi:
@@ -32,6 +41,8 @@ jobs:
           USER1_PASSWORD: ${{ secrets.USER1_PASSWORD }}
           USER2_USERNAME: ${{ secrets.USER2_USERNAME }}
           USER2_PASSWORD: ${{ secrets.USER2_PASSWORD }}
+          FORCE_USER: ${{ github.event.inputs.force_user }}
+          FORCE_MODE: ${{ github.event.inputs.force_mode }}
         run: python main.py
 
       - name: Upload log & screenshot
