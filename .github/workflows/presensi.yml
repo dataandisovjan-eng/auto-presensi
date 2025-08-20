@@ -1,44 +1,46 @@
-name: Auto Presensi
+name: Presensi Otomatis
 
 on:
   schedule:
-    # Presensi pagi (06:45 WIB) → 23:45 UTC
-    - cron: "45 23 * * 1-5"
-    # Presensi sore (16:05 WIB) → 09:05 UTC
-    - cron: "5 9 * * 1-5"
+    - cron: "45 23 * * 0-5"   # 06:45 WIB Senin-Jumat
+    - cron: "5 9 * * 0-5"     # 16:05 WIB Senin-Jumat
   workflow_dispatch:
+    inputs:
+      force_user:
+        description: "User ID untuk jalankan manual (contoh: user1)"
+        required: false
+      force_action:
+        description: "Aksi presensi (check_in / check_out)"
+        required: false
 
 jobs:
   presensi:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout repo
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.10'
+          python-version: "3.10"
 
       - name: Install dependencies
         run: pip install -r requirements.txt
 
       - name: Jalankan Presensi
-        run: python main.py
         env:
+          FORCE_USER: ${{ github.event.inputs.force_user }}
+          FORCE_ACTION: ${{ github.event.inputs.force_action }}
           USER1_USERNAME: ${{ secrets.USER1_USERNAME }}
           USER1_PASSWORD: ${{ secrets.USER1_PASSWORD }}
           USER2_USERNAME: ${{ secrets.USER2_USERNAME }}
           USER2_PASSWORD: ${{ secrets.USER2_PASSWORD }}
-
-      - name: Upload Logs
-        uses: actions/upload-artifact@v4
-        with:
-          name: presensi-logs
-          path: logs/*.log
+        run: python main.py
 
       - name: Upload Screenshots
+        if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: presensi-screenshots
+          name: screenshots
           path: screenshots/*.png
+          if-no-files-found: ignore
