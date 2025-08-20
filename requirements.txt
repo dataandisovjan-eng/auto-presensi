@@ -1,3 +1,2 @@
-selenium==4.21.0
+selenium==4.23.1
 pytz
-requests
