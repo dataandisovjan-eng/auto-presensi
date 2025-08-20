@@ -1,23 +1,17 @@
-name: Presensi Otomatis
+name: Auto Presensi
 
 on:
   schedule:
-    - cron: "45 23 * * 0-5"   # 06:45 WIB Senin-Jumat
-    - cron: "5 9 * * 0-5"     # 16:05 WIB Senin-Jumat
+    - cron: "0,15,30,45 * * * *"   # cek tiap 15 menit
   workflow_dispatch:
-    inputs:
-      force_user:
-        description: "User ID untuk jalankan manual (contoh: user1)"
-        required: false
-      force_action:
-        description: "Aksi presensi (check_in / check_out)"
-        required: false
 
 jobs:
   presensi:
     runs-on: ubuntu-latest
+
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout repo
+        uses: actions/checkout@v4
 
       - name: Setup Python
         uses: actions/setup-python@v5
@@ -27,20 +21,23 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
-      - name: Jalankan Presensi
+      - name: Run presensi
         env:
-          FORCE_USER: ${{ github.event.inputs.force_user }}
-          FORCE_ACTION: ${{ github.event.inputs.force_action }}
           USER1_USERNAME: ${{ secrets.USER1_USERNAME }}
           USER1_PASSWORD: ${{ secrets.USER1_PASSWORD }}
           USER2_USERNAME: ${{ secrets.USER2_USERNAME }}
           USER2_PASSWORD: ${{ secrets.USER2_PASSWORD }}
         run: python main.py
 
-      - name: Upload Screenshots
-        if: always()
+      - name: Upload logs
         uses: actions/upload-artifact@v4
         with:
-          name: screenshots
+          name: presensi-logs
+          path: presensi.log
+
+      - name: Upload screenshots
+        uses: actions/upload-artifact@v4
+        with:
+          name: presensi-screenshots
           path: screenshots/*.png
           if-no-files-found: ignore
