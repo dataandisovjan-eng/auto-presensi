@@ -2,16 +2,18 @@
   "timezone": "Asia/Jakarta",
   "users": [
     {
-      "name": "User1",
-      "username": "user1_nip",
-      "password": "password_user1",
+      "id": "user1",
+      "name": "Pak Budi",
+      "secret_user": "USER1_USERNAME",
+      "secret_pass": "USER1_PASSWORD",
       "check_in": "06:45",
       "check_out": "16:05"
     },
     {
-      "name": "User2",
-      "username": "user2_nip",
-      "password": "password_user2",
+      "id": "user2",
+      "name": "Bu Sari",
+      "secret_user": "USER2_USERNAME",
+      "secret_pass": "USER2_PASSWORD",
       "check_in": "07:00",
       "check_out": "16:30"
     }
