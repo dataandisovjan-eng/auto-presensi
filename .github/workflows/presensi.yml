@@ -1,36 +1,36 @@
 name: Auto Presensi
 
 on:
-  schedule:
-    - cron: "0 22 * * 0-4"   # Presensi pagi (06:45 WIB)
-    - cron: "5 9 * * 0-4"    # Presensi sore (16:15 WIB)
   workflow_dispatch:
+  schedule:
+    - cron: "*/5 * * * *"   # jalan tiap 5 menit
 
 jobs:
-  build:
+  presensi:
     runs-on: ubuntu-latest
+
     steps:
-      - uses: actions/checkout@v3
+    - name: Checkout repo
+      uses: actions/checkout@v4
 
-      - name: Setup Python
-        uses: actions/setup-python@v4
-        with:
-          python-version: "3.10"
+    - name: Setup Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: "3.10"
 
-      - name: Install dependencies
-        run: pip install -r requirements.txt
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
 
-      - name: Run presensi script
-        env:
-          PRESENSI_USERNAME: ${{ secrets.PRESENSI_USERNAME }}
-          PRESENSI_PASSWORD: ${{ secrets.PRESENSI_PASSWORD }}
-        run: python main.py
+    - name: Jalankan script presensi
+      run: python main.py
+      env:
+        PRESENSI_USERNAME: ${{ secrets.PRESENSI_USERNAME }}
+        PRESENSI_PASSWORD: ${{ secrets.PRESENSI_PASSWORD }}
 
-      - name: Upload Artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: presensi-logs
-          path: |
-            *.png
-            *.html
-            *.log
+    - name: Upload log & screenshot
+      uses: actions/upload-artifact@v4
+      with:
+        name: presensi-logs-${{ github.run_id }}
+        path: logs/**
