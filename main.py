@@ -1,7 +1,6 @@
 import os
-import time
 import json
-import logging
+import time
 from datetime import datetime
 import pytz
 from selenium import webdriver
@@ -10,107 +9,76 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 
-# === LOAD CONFIG ===
-with open("config.json", "r") as f:
-    CONFIG = json.load(f)
+# Fungsi login & presensi
+def presensi(username, password, mode, user_name):
+    options = Options()
+    options.add_argument("--headless=new")
+    options.add_argument("--no-sandbox")
+    options.add_argument("--disable-dev-shm-usage")
 
-TIMEZONE = pytz.timezone(CONFIG.get("timezone", "Asia/Jakarta"))
-USERS = CONFIG.get("users", [])
+    driver = webdriver.Chrome(options=options)
 
-# === SETUP LOGGING ===
-os.makedirs("logs", exist_ok=True)
-logging.basicConfig(
-    filename="logs/presensi.log",
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(message)s",
-)
-
-def save_screenshot(driver, step_name, user):
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    filename = f"logs/{user}_{step_name}_{timestamp}.png"
-    driver.save_screenshot(filename)
-    logging.info(f"[{user}] Screenshot saved: {filename}")
-
-def save_html(driver, step_name, user):
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    filename = f"logs/{user}_{step_name}_{timestamp}.html"
-    with open(filename, "w", encoding="utf-8") as f:
-        f.write(driver.page_source)
-    logging.info(f"[{user}] HTML saved: {filename}")
-
-def presensi(user):
     try:
-        options = Options()
-        options.add_argument("--headless=new")
-        options.add_argument("--no-sandbox")
-        options.add_argument("--disable-dev-shm-usage")
-
-        driver = webdriver.Chrome(options=options)
-        wait = WebDriverWait(driver, 20)
-
-        logging.info(f"[{user['name']}] Buka halaman login")
         driver.get("https://dani.perhutani.co.id")
-        save_screenshot(driver, "halaman_login", user['name'])
-        save_html(driver, "halaman_login", user['name'])
 
-        # --- Login ---
-        wait.until(EC.presence_of_element_located((By.NAME, "username"))).send_keys(user["username"])
-        wait.until(EC.presence_of_element_located((By.NAME, "password"))).send_keys(user["password"])
-        wait.until(EC.element_to_be_clickable((By.CSS_SELECTOR, "button[type='submit']"))).click()
+        # Login
+        WebDriverWait(driver, 15).until(EC.presence_of_element_located((By.NAME, "username"))).send_keys(username)
+        driver.find_element(By.NAME, "password").send_keys(password)
+        driver.find_element(By.XPATH, "//button[@type='submit']").click()
 
-        logging.info(f"[{user['name']}] Login berhasil")
-        time.sleep(3)
-        save_screenshot(driver, "setelah_login", user['name'])
-
-        # --- Handle pop-up Next ---
-        while True:
-            try:
-                next_btn = wait.until(EC.element_to_be_clickable((By.XPATH, "//button[contains(text(),'Next')]")))
-                next_btn.click()
-                logging.info(f"[{user['name']}] Klik Next popup")
-                save_screenshot(driver, "popup_next", user['name'])
-                time.sleep(1)
-            except:
-                break
-
-        # --- Handle pop-up Finish ---
+        # Handle pop-up Next → Finish
         try:
-            finish_btn = wait.until(EC.element_to_be_clickable((By.XPATH, "//button[contains(text(),'Finish')]")))
-            finish_btn.click()
-            logging.info(f"[{user['name']}] Klik Finish popup")
-            save_screenshot(driver, "popup_finish", user['name'])
-            time.sleep(2)
+            while True:
+                next_btn = WebDriverWait(driver, 5).until(
+                    EC.presence_of_element_located((By.XPATH, "//button[contains(.,'Next') or contains(.,'Finish')]"))
+                )
+                next_btn.click()
+                time.sleep(1)
+                if "Finish" in next_btn.text:
+                    break
         except:
-            logging.info(f"[{user['name']}] Tidak ada popup Finish")
+            pass  # Kalau tidak ada pop-up
 
-        # --- Klik tombol presensi utama ---
-        presensi_btn = wait.until(EC.element_to_be_clickable((By.XPATH, "//button[contains(text(),'Klik Disini untuk Presensi')]")))
-        presensi_btn.click()
-        logging.info(f"[{user['name']}] Klik tombol presensi utama")
-        save_screenshot(driver, "klik_presensi_utama", user['name'])
+        # Klik tombol presensi utama
+        WebDriverWait(driver, 15).until(
+            EC.element_to_be_clickable((By.XPATH, "//a[contains(.,'Klik Disini untuk Presensi')]"))
+        ).click()
 
-        # --- Popup konfirmasi presensi ---
-        confirm_btn = wait.until(EC.element_to_be_clickable((By.XPATH, "//button[contains(text(),'Klik Disini untuk Presensi')]")))
-        confirm_btn.click()
-        logging.info(f"[{user['name']}] Klik tombol presensi di popup")
-        save_screenshot(driver, "popup_konfirmasi_presensi", user['name'])
+        # Klik tombol presensi di pop-up konfirmasi
+        WebDriverWait(driver, 10).until(
+            EC.element_to_be_clickable((By.XPATH, "//a[contains(.,'Klik Disini untuk Presensi')]"))
+        ).click()
 
-        logging.info(f"[{user['name']}] ✅ Presensi selesai")
+        # Screenshot bukti
+        ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = f"{user_name}_{mode}_{ts}.png"
+        driver.save_screenshot(filename)
+        print(f"✅ {user_name} berhasil presensi {mode}. Screenshot: {filename}")
 
     except Exception as e:
-        logging.error(f"[{user['name']}] Gagal presensi: {e}")
-        save_screenshot(driver, "error", user['name'])
-        save_html(driver, "error_page", user['name'])
+        print(f"❌ Error {user_name} {mode}: {e}")
     finally:
         driver.quit()
 
-if __name__ == "__main__":
-    now = datetime.now(TIMEZONE).strftime("%H:%M")
-    logging.info(f"⏰ Sekarang {now}, cek jadwal user...")
+# --- MAIN ---
+with open("config.json", "r") as f:
+    config = json.load(f)
 
-    for user in USERS:
-        if now == user.get("check_in") or now == user.get("check_out"):
-            logging.info(f"[{user['name']}] Waktunya presensi ({now}), jalankan...")
-            presensi(user)
-        else:
-            logging.info(f"[{user['name']}] Bukan waktunya presensi ({now}), skip...")
+timezone = pytz.timezone(config["timezone"])
+now = datetime.now(timezone)
+today_hhmm = now.strftime("%H:%M")
+
+for user in config["users"]:
+    username = os.getenv(user["secret_user"])
+    password = os.getenv(user["secret_pass"])
+
+    if not username or not password:
+        print(f"⚠️ Secrets untuk {user['name']} belum di-set")
+        continue
+
+    if today_hhmm == user["check_in"]:
+        presensi(username, password, "pagi", user["name"])
+    elif today_hhmm == user["check_out"]:
+        presensi(username, password, "sore", user["name"])
+    else:
+        print(f"ℹ️ Bukan jadwal presensi untuk {user['name']} (sekarang {today_hhmm})")
