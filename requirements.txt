@@ -1,2 +1,4 @@
-selenium
-pytz
+selenium==4.21.0
+webdriver-manager==4.0.2
+requests==2.31.0
+pytz==2024.1
