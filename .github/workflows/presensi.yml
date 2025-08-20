@@ -2,7 +2,9 @@ name: Auto Presensi
 
 on:
   schedule:
-    - cron: "0,15,30,45 * * * *"   # cek tiap 15 menit
+    - cron: "45 23 * * 0-5"   # 06:45 WIB
+    - cron: "5 9 * * 0-5"     # 16:05 WIB
+    - cron: "30 9 * * 0-5"    # 16:30 WIB
   workflow_dispatch:
 
 jobs:
@@ -10,34 +12,32 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout repo
-        uses: actions/checkout@v4
+    - name: Checkout repo
+      uses: actions/checkout@v4
 
-      - name: Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.10"
+    - name: Setup Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: "3.10"
 
-      - name: Install dependencies
-        run: pip install -r requirements.txt
+    - name: Install dependencies
+      run: pip install -r requirements.txt
 
-      - name: Run presensi
-        env:
-          USER1_USERNAME: ${{ secrets.USER1_USERNAME }}
-          USER1_PASSWORD: ${{ secrets.USER1_PASSWORD }}
-          USER2_USERNAME: ${{ secrets.USER2_USERNAME }}
-          USER2_PASSWORD: ${{ secrets.USER2_PASSWORD }}
-        run: python main.py
+    - name: Setup Chrome
+      uses: browser-actions/setup-chrome@latest
 
-      - name: Upload logs
-        uses: actions/upload-artifact@v4
-        with:
-          name: presensi-logs
-          path: presensi.log
+    - name: Run Presensi
+      env:
+        USER1_USERNAME: ${{ secrets.USER1_USERNAME }}
+        USER1_PASSWORD: ${{ secrets.USER1_PASSWORD }}
+        USER2_USERNAME: ${{ secrets.USER2_USERNAME }}
+        USER2_PASSWORD: ${{ secrets.USER2_PASSWORD }}
+      run: python main.py
 
-      - name: Upload screenshots
-        uses: actions/upload-artifact@v4
-        with:
-          name: presensi-screenshots
-          path: screenshots/*.png
-          if-no-files-found: ignore
+    - name: Upload logs & screenshots
+      uses: actions/upload-artifact@v4
+      with:
+        name: presensi-artifacts
+        path: |
+          logs/*.log
+          screenshots/*.png
