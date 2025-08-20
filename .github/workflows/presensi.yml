@@ -1,19 +1,27 @@
-name: presensi
+name: Presensi Otomatis
 
 on:
   schedule:
-    - cron: "45 23 * * 0-4"  # 06:45 WIB (Check-in user1)
-    - cron: "5 9 * * 0-4"    # 16:05 WIB (Check-out user1)
-    - cron: "0 0 * * 0-4"    # 07:00 WIB (Check-in user2)
-    - cron: "30 9 * * 0-4"   # 16:30 WIB (Check-out user2)
+    # Jam 06:45 & 16:30 WIB → konversi ke UTC (WIB - 7 jam)
+    - cron: "45 23 * * *"   # 06:45 WIB
+    - cron: "30 9 * * *"    # 16:30 WIB
   workflow_dispatch:
+    inputs:
+      force_user:
+        description: "ID user sesuai config.json (contoh: user1)"
+        required: false
+        default: ""
+      force_mode:
+        description: "Mode presensi (checkin/checkout)"
+        required: false
+        default: ""
 
 jobs:
-  run:
+  presensi:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout
+      - name: Checkout repo
         uses: actions/checkout@v4
 
       - name: Setup Python
@@ -26,28 +34,24 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Setup Chrome
-        uses: browser-actions/setup-chrome@latest
-
-      - name: Setup ChromeDriver
-        uses: nanasess/setup-chromedriver@v2
-
-      - name: Run presensi
+      - name: Jalankan Presensi
         env:
+          # === Secrets untuk user ===
           USER1_USERNAME: ${{ secrets.USER1_USERNAME }}
           USER1_PASSWORD: ${{ secrets.USER1_PASSWORD }}
           USER2_USERNAME: ${{ secrets.USER2_USERNAME }}
           USER2_PASSWORD: ${{ secrets.USER2_PASSWORD }}
+
+          # === Opsi manual ===
+          FORCE_USER: ${{ github.event.inputs.force_user }}
+          FORCE_MODE: ${{ github.event.inputs.force_mode }}
         run: python main.py
 
-      - name: Upload logs
+      - name: Upload log & screenshot
+        if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: presensi-logs
-          path: logs/
-
-      - name: Upload screenshots
-        uses: actions/upload-artifact@v4
-        with:
-          name: presensi-screenshots
-          path: screenshots/
+          name: presensi-artifacts
+          path: |
+            logs/*.log
+            screenshots/*.png
