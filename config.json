@@ -1,5 +1,6 @@
 {
   "timezone": "Asia/Jakarta",
+  "time_margin": 5,
   "users": [
     {
       "id": "user1",
