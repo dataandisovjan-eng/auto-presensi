@@ -9,7 +9,7 @@ from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.chrome.options import Options
 
-# Setup logging
+# Setup logging ke file
 os.makedirs("logs", exist_ok=True)
 os.makedirs("screenshots", exist_ok=True)
 logging.basicConfig(
@@ -17,6 +17,11 @@ logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s",
 )
+
+def log_console(msg):
+    """Cetak log ke console + tulis ke file"""
+    print(msg, flush=True)
+    logging.info(msg)
 
 def load_config():
     with open("config.json", "r") as f:
@@ -29,11 +34,10 @@ def is_holiday(today, timezone):
         url = f"https://dayoffapi.vercel.app/api?year={year}&tz={timezone}"
         res = requests.get(url, timeout=10)
         data = res.json()
-        # data = {"holidays": [{"date": "2025-08-17", "name": "Hari Kemerdekaan"}]}
         holidays = [h["date"] for h in data.get("holidays", [])]
         return today.strftime("%Y-%m-%d") in holidays
     except Exception as e:
-        logging.warning(f"⚠️ Gagal cek API Hari Libur: {e}")
+        log_console(f"⚠️ Gagal cek API Hari Libur: {e}")
         return False
 
 def do_presensi(user_id, username, password, jenis):
@@ -76,10 +80,10 @@ def do_presensi(user_id, username, password, jenis):
         # Screenshot bukti
         filename = f"screenshots/{user_id}_{jenis}.png"
         driver.save_screenshot(filename)
-        logging.info(f"[{user_id}] ✅ Presensi {jenis} berhasil, screenshot tersimpan di {filename}")
+        log_console(f"[{user_id}] ✅ Presensi {jenis} BERHASIL, screenshot: {filename}")
 
     except Exception as e:
-        logging.error(f"[{user_id}] ❌ Error saat presensi {jenis}: {e}")
+        log_console(f"[{user_id}] ❌ Error saat presensi {jenis}: {e}")
     finally:
         try:
             driver.quit()
@@ -91,14 +95,14 @@ def main():
     tz = pytz.timezone(config["timezone"])
     now = datetime.now(tz)
     today = now.date()
-    logging.info(f"⏰ Sekarang {now.strftime('%Y-%m-%d %H:%M')} ({config['timezone']})")
+    log_console(f"⏰ Sekarang {now.strftime('%Y-%m-%d %H:%M')} ({config['timezone']})")
 
     # Skip weekend / libur
     if now.weekday() >= 5:  # Sabtu(5) Minggu(6)
-        logging.info("📌 Skip (hari weekend)")
+        log_console("📌 Skip (hari weekend)")
         return
     if is_holiday(now, config["timezone"]):
-        logging.info("📌 Skip (hari libur nasional)")
+        log_console("📌 Skip (hari libur nasional)")
         return
 
     for user in config["users"]:
@@ -106,7 +110,7 @@ def main():
         username = os.getenv(user["secret_user"])
         password = os.getenv(user["secret_pass"])
         if not username or not password:
-            logging.warning(f"[{user_id}] ⚠️ Username/password tidak ditemukan di Secrets")
+            log_console(f"[{user_id}] ⚠️ Username/password tidak ditemukan di Secrets")
             continue
 
         # Jadwal check in/out
@@ -122,7 +126,7 @@ def main():
         elif check_out_time <= now.time() <= (datetime.combine(today, check_out_time) + margin).time():
             do_presensi(user_id, username, password, "checkout")
         else:
-            logging.info(f"[{user_id}] Skip (bukan jadwal user ini)")
+            log_console(f"[{user_id}] Skip (bukan jadwal user ini)")
 
 if __name__ == "__main__":
     main()
