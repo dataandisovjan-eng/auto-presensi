@@ -1,143 +1,121 @@
 import os
-import time
 import json
+import time
 import logging
+from datetime import datetime
 import pytz
-import datetime
 import requests
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.chrome.options import Options
-from selenium.webdriver.chrome.service import Service
-from webdriver_manager.chrome import ChromeDriverManager
 
 # === Setup Logging ===
 os.makedirs("logs", exist_ok=True)
 os.makedirs("screenshots", exist_ok=True)
-log_file = f"logs/presensi_{datetime.date.today()}.log"
+log_file = f"logs/presensi_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
 logging.basicConfig(
     filename=log_file,
     level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(message)s",
+    format="%(asctime)s [%(levelname)s] %(message)s"
 )
 console = logging.StreamHandler()
 console.setLevel(logging.INFO)
 logging.getLogger().addHandler(console)
 
-# === Load Config ===
-with open("config.json", "r") as f:
+# === Baca config.json ===
+with open("config.json", "r", encoding="utf-8") as f:
     config = json.load(f)
 
-TIMEZONE = pytz.timezone(config.get("timezone", "Asia/Jakarta"))
-BASE_URL = "https://dani.perhutani.co.id"
+tz = pytz.timezone(config.get("timezone", "Asia/Jakarta"))
 
 # === Cek Hari Libur Nasional ===
-def is_holiday(today):
+def is_libur_nasional(today):
     try:
-        year = today.year
-        url = f"https://raw.githubusercontent.com/guangrei/APIHariLibur/main/{year}.json"
-        res = requests.get(url, timeout=10)
-        holidays = res.json()
-        today_str = today.strftime("%Y-%m-%d")
-        return today_str in holidays
+        resp = requests.get(f"https://dayoffapi.vercel.app/api?year={today.year}&month={today.month}")
+        data = resp.json()
+        for item in data:
+            if item.get("date") == today.strftime("%Y-%m-%d") and item.get("is_national_holiday", False):
+                return True
+        return False
     except Exception as e:
         logging.warning(f"⚠️ Gagal cek API Hari Libur: {e}")
         return False
 
-# === Login + Presensi ===
-def do_presensi(username, password, user_name, mode="checkin"):
-    logging.info(f"[{user_name}] 🚀 Mulai presensi {mode}...")
+# === Presensi dengan Selenium ===
+def presensi(user, mode):
+    username = os.getenv(user["secret_user"])
+    password = os.getenv(user["secret_pass"])
 
-    options = Options()
-    options.add_argument("--headless=new")
-    options.add_argument("--no-sandbox")
-    options.add_argument("--disable-dev-shm-usage")
-
-    driver = webdriver.Chrome(
-        service=Service(ChromeDriverManager().install()),
-        options=options
-    )
+    if not username or not password:
+        logging.error(f"[{user['name']}] ⚠️ Username/password tidak ditemukan di Secrets")
+        return
 
     try:
-        driver.get(BASE_URL)
+        chrome_options = Options()
+        chrome_options.add_argument("--headless=new")
+        chrome_options.add_argument("--no-sandbox")
+        chrome_options.add_argument("--disable-dev-shm-usage")
+
+        driver = webdriver.Chrome(options=chrome_options)
+        driver.get("https://dani.perhutani.co.id")
+
+        logging.info(f"[{user['name']}] 🌐 Membuka halaman login...")
         time.sleep(2)
 
-        # Login
         driver.find_element(By.NAME, "username").send_keys(username)
         driver.find_element(By.NAME, "password").send_keys(password)
-        driver.find_element(By.XPATH, "//button[@type='submit']").click()
+        driver.find_element(By.CSS_SELECTOR, "button[type=submit]").click()
         time.sleep(3)
 
-        # Handle pop-up "Next" jika ada
-        while True:
-            try:
-                btn_next = driver.find_element(By.XPATH, "//button[contains(text(), 'Next')]")
+        # Tutup pop-up Next/Finish jika ada
+        try:
+            while True:
+                btn_next = driver.find_element(By.XPATH, "//button[contains(text(),'Next') or contains(text(),'Finish')]")
                 btn_next.click()
                 time.sleep(1)
-            except:
-                break
-        try:
-            btn_finish = driver.find_element(By.XPATH, "//button[contains(text(), 'Finish')]")
-            btn_finish.click()
-            time.sleep(1)
         except:
             pass
 
-        # Klik tombol presensi utama (warna oranye)
-        try:
-            presensi_btn = driver.find_element(By.XPATH, "//button[contains(text(), 'Klik disini untuk presensi')]")
-            presensi_btn.click()
-            time.sleep(2)
-        except Exception as e:
-            logging.error(f"[{user_name}] ❌ Gagal menemukan tombol presensi: {e}")
-            return
+        # Klik tombol presensi
+        btn_presensi = driver.find_element(By.XPATH, "//a[contains(text(),'Klik disini untuk presensi')]")
+        btn_presensi.click()
+        time.sleep(2)
 
-        # Popup konfirmasi terakhir
-        try:
-            popup_btn = driver.find_element(By.XPATH, "//button[contains(text(), 'Klik disini untuk presensi')]")
-            popup_btn.click()
-            time.sleep(2)
-        except:
-            logging.warning(f"[{user_name}] ⚠️ Tidak menemukan tombol presensi di popup")
+        screenshot_file = f"screenshots/{user['id']}_{mode}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png"
+        driver.save_screenshot(screenshot_file)
+        logging.info(f"[{user['name']}] ✅ Presensi {mode} berhasil. Screenshot: {screenshot_file}")
 
-        # Screenshot hasil
-        screenshot_path = f"screenshots/{user_name}_{mode}_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.png"
-        driver.save_screenshot(screenshot_path)
-        logging.info(f"[{user_name}] 📸 Screenshot disimpan: {screenshot_path}")
-
-        logging.info(f"[{user_name}] ✅ Presensi {mode} selesai")
-    except Exception as e:
-        logging.error(f"[{user_name}] ❌ Error saat presensi: {e}")
-    finally:
         driver.quit()
+    except Exception as e:
+        logging.error(f"[{user['name']}] ❌ Error saat presensi: {e}")
 
-# === Main Run ===
-def main():
-    now = datetime.datetime.now(TIMEZONE)
-    today = now.date()
-    now_str = now.strftime("%H:%M")
-    logging.info(f"⏰ Sekarang {now.strftime('%Y-%m-%d %H:%M')} ({TIMEZONE})")
+# === MAIN ===
+now = datetime.now(tz)
+today = now.date()
+logging.info(f"⏰ Sekarang {now.strftime('%Y-%m-%d %H:%M')} ({config['timezone']})")
 
-    if now.weekday() >= 5:
-        logging.info("📌 Weekend, skip presensi")
-        return
-    if is_holiday(today):
-        logging.info("📌 Hari libur nasional, skip presensi")
-        return
+if today.weekday() >= 5 or is_libur_nasional(today):
+    logging.info("📌 Hari ini libur. Presensi dilewati.")
+    exit(0)
 
-    for user in config["users"]:
-        username = os.getenv(user["secret_user"])
-        password = os.getenv(user["secret_pass"])
-        if not username or not password:
-            logging.warning(f"[{user['name']}] ⚠️ Username/password tidak ditemukan di Secrets")
-            continue
+# Mode paksa via workflow_dispatch
+force_user = os.getenv("FORCE_USER", "").strip()
+force_mode = os.getenv("FORCE_MODE", "").strip().lower()
 
-        if now_str == user["check_in"]:
-            do_presensi(username, password, user["name"], "checkin")
-        elif now_str == user["check_out"]:
-            do_presensi(username, password, user["name"], "checkout")
-        else:
-            logging.info(f"[{user['name']}] Skip (bukan jadwal user ini)")
+for user in config["users"]:
+    check_in_time = datetime.strptime(user["check_in"], "%H:%M").time()
+    check_out_time = datetime.strptime(user["check_out"], "%H:%M").time()
 
-if __name__ == "__main__":
-    main()
+    if force_user and force_user != user["id"]:
+        continue
+
+    if force_mode in ["checkin", "checkout"]:
+        presensi(user, force_mode)
+        continue
+
+    if now.time().hour == check_in_time.hour and now.time().minute == check_in_time.minute:
+        presensi(user, "checkin")
+    elif now.time().hour == check_out_time.hour and now.time().minute == check_out_time.minute:
+        presensi(user, "checkout")
+    else:
+        logging.info(f"[{user['name']}] Skip (bukan jadwal user ini)")
