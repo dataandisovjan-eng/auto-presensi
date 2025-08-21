@@ -93,64 +93,60 @@ def try_click(driver, by, selector, attempts=3, delay=0.6, name_desc=""):
         logging.error(f"❌ Gagal klik {name_desc} setelah {attempts} percobaan: {last_err}")
     return False
 
-def close_guided_popups(driver, user, max_rounds=20):
+def close_guided_popups(driver, user, max_attempts=20):
     """
-    Tutup popup bertingkat/beruntun:
-    - klik 'Next' berulang kali
-    - klik 'Finish' jika muncul
-    - klik 'Selesai' jika muncul
-    Jalankan beberapa putaran untuk antisipasi popup acak.
+    Tutup popup bertingkat/beruntun.
+    - Loop dan klik 'Next' sampai tidak ada lagi.
+    - Setelah 'Next' habis, klik 'Finish' atau 'Selesai'.
     """
     logging.info(f"[{user['name']}] 🔎 Mencari pop-up untuk ditutup...")
     
-    # Looping untuk mengklik tombol pop-up
-    for r in range(1, max_rounds + 1):
-        closed_any = False
-        
-        # Coba klik tombol 'Next'
+    # Loop untuk mengklik tombol 'Next'
+    for _ in range(max_attempts):
         try:
-            btn = WebDriverWait(driver, 2).until(
+            # Cari tombol 'Next' dan klik
+            btn_next = WebDriverWait(driver, 2).until(
                 EC.element_to_be_clickable((By.XPATH, ci_xpath_contains("next")))
             )
-            scroll_into_view(driver, btn)
-            btn.click()
-            closed_any = True
-            logging.info(f"[{user['name']}] ⏭️ Klik Next (round {r})")
-            time.sleep(1.5)
+            scroll_into_view(driver, btn_next)
+            btn_next.click()
+            logging.info(f"[{user['name']}] ⏭️ Klik Next")
+            time.sleep(1.5) # Jeda untuk memuat pop-up berikutnya
         except (TimeoutException, StaleElementReferenceException):
-            # Jika tombol 'Next' tidak ditemukan, coba cari tombol 'Finish'
-            pass
-        
-        # Coba klik tombol 'Finish' atau 'Selesai'
-        try:
-            btn = WebDriverWait(driver, 2).until(
-                EC.element_to_be_clickable((By.XPATH, ci_xpath_contains("finish")))
-            )
-            scroll_into_view(driver, btn)
-            btn.click()
-            closed_any = True
-            logging.info(f"[{user['name']}] 🏁 Klik Finish (round {r})")
-            time.sleep(1.5)
-        except (TimeoutException, StaleElementReferenceException):
-            # Jika tombol 'Finish' tidak ditemukan, coba cari tombol 'Selesai'
-            pass
+            # Tombol 'Next' tidak ditemukan, keluar dari loop
+            break
+    
+    # Setelah semua 'Next' diklik, cari tombol 'Finish' atau 'Selesai'
+    closed_final = False
+    try:
+        btn_finish = WebDriverWait(driver, 5).until(
+            EC.element_to_be_clickable((By.XPATH, ci_xpath_contains("finish")))
+        )
+        scroll_into_view(driver, btn_finish)
+        btn_finish.click()
+        closed_final = True
+        logging.info(f"[{user['name']}] 🏁 Klik Finish")
+        time.sleep(2)
+    except (TimeoutException, StaleElementReferenceException):
+        pass
 
+    if not closed_final:
         try:
-            btn = WebDriverWait(driver, 2).until(
+            btn_selesai = WebDriverWait(driver, 5).until(
                 EC.element_to_be_clickable((By.XPATH, ci_xpath_contains("selesai")))
             )
-            scroll_into_view(driver, btn)
-            btn.click()
-            closed_any = True
-            logging.info(f"[{user['name']}] 🏁 Klik Selesai (round {r})")
-            time.sleep(1.5)
+            scroll_into_view(driver, btn_selesai)
+            btn_selesai.click()
+            closed_final = True
+            logging.info(f"[{user['name']}] 🏁 Klik Selesai")
+            time.sleep(2)
         except (TimeoutException, StaleElementReferenceException):
             pass
-
-        if not closed_any:
-            # Tidak ada pop-up yang terdeteksi, keluar dari loop
-            logging.info(f"[{user['name']}] 🎉 Semua pop-up ditutup setelah {r} round.")
-            break
+    
+    if not closed_final:
+        logging.info(f"[{user['name']}] 🎉 Tidak ada pop-up 'Next', 'Finish', atau 'Selesai' yang ditemukan.")
+    else:
+        logging.info(f"[{user['name']}] 🎉 Semua pop-up berhasil ditutup.")
 
 def login(driver, user):
     username = os.getenv(user["secret_user"])
@@ -222,7 +218,7 @@ def lakukan_presensi(driver, user, mode="check_in"):
     Dengan retry yang kuat di setiap langkah.
     """
     # Pastikan popup guided/announcement ditutup
-    close_guided_popups(driver, user, max_rounds=20)
+    close_guided_popups(driver, user, max_attempts=20)
     time.sleep(2.0) # Tambahan jeda untuk memastikan DOM stabil
 
     # Mencari tombol utama ("klik disini untuk presensi")
@@ -243,7 +239,7 @@ def lakukan_presensi(driver, user, mode="check_in"):
     # Tunggu popup konfirmasi
     time.sleep(2.5) # Tambahan jeda
     # tutup popup yang mungkin ikut muncul lagi
-    close_guided_popups(driver, user, max_rounds=5)
+    close_guided_popups(driver, user, max_attempts=5)
 
     # Klik tombol konfirmasi di popup (tombol yang sama di dalam pop-up)
     ok2 = try_click(driver, By.XPATH, btn_xpath, attempts=5, delay=1.0, name_desc="Tombol Konfirmasi Presensi (Popup)")
