@@ -1,49 +1,49 @@
-name: presensi
+name: Presensi Otomatis
 
 on:
   schedule:
-    - cron: "30 22 * * *"   # 05:30 WIB (Check-in)
-    - cron: "5 9 * * *"     # 16:05 WIB (Check-out)
+    # Presensi dijalankan setiap 15 menit untuk mengecek apakah sudah waktunya
+    - cron: "*/15 * * * *"
   workflow_dispatch:
     inputs:
       force_user:
-        description: "User ID (misal: user1)"
+        description: "User ID untuk menjalankan manual (opsional)"
         required: false
       force_mode:
-        description: "Mode presensi (check_in / check_out)"
+        description: "Mode presensi (check_in/check_out, opsional)"
         required: false
 
 jobs:
-  run:
+  presensi:
     runs-on: ubuntu-latest
-    env:
-      USER1_ID: ${{ secrets.USER1_ID }}
-      USER1_PASS: ${{ secrets.USER1_PASS }}
-      USER2_ID: ${{ secrets.USER2_ID }}
-      USER2_PASS: ${{ secrets.USER2_PASS }}
-      FORCE_USER: ${{ github.event.inputs.force_user }}
-      FORCE_MODE: ${{ github.event.inputs.force_mode }}
-
     steps:
-      - uses: actions/checkout@v3
+      - name: Checkout repo
+        uses: actions/checkout@v4
 
       - name: Setup Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5
         with:
-          python-version: "3.10"
+          python-version: "3.11"
 
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-          sudo apt-get update
-          sudo apt-get install -y chromium-browser chromium-chromedriver
 
-      - name: Run Presensi
-        run: python main.py
+      - name: Run presensi script
+        env:
+          USER1_USERNAME: ${{ secrets.USER1_USERNAME }}
+          USER1_PASSWORD: ${{ secrets.USER1_PASSWORD }}
+          USER2_USERNAME: ${{ secrets.USER2_USERNAME }}
+          USER2_PASSWORD: ${{ secrets.USER2_PASSWORD }}
+          FORCE_USER: ${{ github.event.inputs.force_user }}
+          FORCE_MODE: ${{ github.event.inputs.force_mode }}
+        run: |
+          python main.py > presensi.log 2>&1
 
       - name: Upload logs & screenshots
-        uses: actions/upload-artifact@v3
+        if: always()
+        uses: actions/upload-artifact@v4
         with:
           name: presensi_artifacts
           path: |
