@@ -1,6 +1,7 @@
 import os
 import time
 import logging
+import json
 from datetime import datetime
 import pytz
 
@@ -25,20 +26,21 @@ logging.basicConfig(
     ]
 )
 
-# Users -> mapping ke Secrets (tetap 2 user: Andi=USER1/PASS1, Bu Sari=USER2/PASS2)
-USERS = [
-    {"name": "Andi",    "secret_user": "USER1", "secret_pass": "PASS1"},
-    {"name": "Bu Sari", "secret_user": "USER2", "secret_pass": "PASS2"},
-]
+# Memuat konfigurasi dari config.json
+try:
+    with open("config.json", "r", encoding="utf-8") as f:
+        CONFIG = json.load(f)
+except FileNotFoundError:
+    logging.error("❌ File config.json tidak ditemukan. Pastikan file ada di direktori yang sama.")
+    exit(1)
+except json.JSONDecodeError:
+    logging.error("❌ Format JSON di config.json tidak valid.")
+    exit(1)
 
-# Jadwal default (WIB)
-JADWAL = {
-    "check_in":  "05:30",
-    "check_out": "16:05",
-}
+TIMEZONE = pytz.timezone(CONFIG.get("timezone", "Asia/Jakarta"))
 
-def now_jkt():
-    return datetime.now(pytz.timezone("Asia/Jakarta"))
+def now_with_tz():
+    return datetime.now(TIMEZONE)
 
 def new_driver():
     opts = Options()
@@ -46,7 +48,6 @@ def new_driver():
     opts.add_argument("--no-sandbox")
     opts.add_argument("--disable-dev-shm-usage")
     opts.add_argument("--disable-gpu")
-    # lebih stabil untuk animasi/overlay
     opts.add_argument("--window-size=1366,768")
     return webdriver.Chrome(options=opts)
 
@@ -134,19 +135,19 @@ def login(driver, user):
     username = os.getenv(user["secret_user"])
     password = os.getenv(user["secret_pass"])
     if not username or not password:
-        raise RuntimeError(f"Secrets untuk {user['name']} belum diisi.")
+        raise RuntimeError(f"Secrets untuk {user['name']} belum diisi. Periksa {user['secret_user']} dan {user['secret_pass']}.")
 
     driver.get(BASE_URL)
     wait_dom_ready(driver)
     logging.info(f"[{user['name']}] 🌐 Buka halaman login")
 
-    # Field NPK (username)
+    # Field NPK (username) - pencarian lebih robust
     npk_candidates = [
         (By.NAME, "npk"),
         (By.ID, "npk"),
         (By.CSS_SELECTOR, "input[name='npk']"),
         (By.CSS_SELECTOR, "input[type='text']"),
-        (By.TAG_NAME, "input"),
+        (By.XPATH, "//input[contains(@placeholder, 'NPK') or contains(@placeholder, 'Username')]"),
     ]
 
     npk_field = None
@@ -163,12 +164,13 @@ def login(driver, user):
     npk_field.clear()
     npk_field.send_keys(username)
 
-    # Field password
+    # Field password - pencarian lebih robust
     pwd_candidates = [
         (By.NAME, "password"),
         (By.ID, "password"),
         (By.CSS_SELECTOR, "input[name='password']"),
         (By.CSS_SELECTOR, "input[type='password']"),
+        (By.XPATH, "//input[contains(@placeholder, 'Password')]"),
     ]
     pwd_field = None
     for by, sel in pwd_candidates:
@@ -205,7 +207,11 @@ def lakukan_presensi(driver, user, mode="check_in"):
     btn_xpath = ci_xpath_contains("klik disini untuk presensi")
     ok = try_click(driver, By.XPATH, btn_xpath, attempts=4, delay=0.8, name_desc="Tombol Presensi Utama")
     if not ok:
-        raise RuntimeError("Tidak bisa klik tombol presensi utama.")
+        # Coba lagi setelah menunggu sejenak, mungkin elemen belum muncul sempurna
+        time.sleep(2)
+        ok = try_click(driver, By.XPATH, btn_xpath, attempts=4, delay=0.8, name_desc="Tombol Presensi Utama (retry)")
+        if not ok:
+            raise RuntimeError("Tidak bisa klik tombol presensi utama.")
 
     # Tunggu popup konfirmasi
     time.sleep(1.2)
@@ -254,37 +260,48 @@ def run_for_user(user, mode, max_retries=2):
     return False
 
 if __name__ == "__main__":
-    now = now_jkt()
-    logging.info(f"⏰ Sekarang {now.strftime('%Y-%m-%d %H:%M')} (Asia/Jakarta)")
+    now = now_with_tz()
+    logging.info(f"⏰ Sekarang {now.strftime('%Y-%m-%d %H:%M')} ({TIMEZONE.zone})")
 
     # Input manual run (dari workflow_dispatch)
-    force_user = os.getenv("FORCE_USER", "").strip()
-    force_mode = os.getenv("FORCE_MODE", "").strip()
+    force_user_input = os.getenv("FORCE_USER", "").strip().lower()
+    force_mode_input = os.getenv("FORCE_MODE", "").strip().lower()
 
-    # Jika manual run tanpa input -> default all + check_in/check_out tergantung jam
-    if os.getenv("GITHUB_EVENT_NAME") == "workflow_dispatch":
-        if not force_user:
-            force_user = "all"
-        if not force_mode:
-            force_mode = "check_out" if now.hour >= 12 else "check_in"
-
-    if force_mode and force_user:
-        logging.info(f"⚡ Manual run: user={force_user}, mode={force_mode}")
-        for u in USERS:
-            if force_user.lower() == "all" or force_user.lower() == u["name"].lower():
-                run_for_user(u, force_mode, max_retries=2)
+    if os.getenv("GITHUB_EVENT_NAME") == "workflow_dispatch" and (force_user_input or force_mode_input):
+        logging.info(f"⚡ Manual run: user={force_user_input or 'all'}, mode={force_mode_input or 'auto'}")
+        
+        users_to_run = []
+        if force_user_input == "all" or not force_user_input:
+            users_to_run = CONFIG["users"]
+        else:
+            for u in CONFIG["users"]:
+                if u["name"].lower() == force_user_input or u["id"].lower() == force_user_input:
+                    users_to_run.append(u)
+                    break
+        
+        for u in users_to_run:
+            mode = force_mode_input
+            if not mode:
+                # Jika mode tidak dispesifikasi, tentukan otomatis
+                if now.hour >= 12:
+                    mode = "check_out"
+                else:
+                    mode = "check_in"
+            
+            run_for_user(u, mode, max_retries=2)
     else:
         # Mode terjadwal
         hhmm = now.strftime("%H:%M")
-        mode = None
-        if hhmm == JADWAL["check_in"]:
-            mode = "check_in"
-        elif hhmm == JADWAL["check_out"]:
-            mode = "check_out"
-
-        if mode:
-            for u in USERS:
+        
+        for u in CONFIG["users"]:
+            mode = None
+            if hhmm == u["check_in"]:
+                mode = "check_in"
+            elif hhmm == u["check_out"]:
+                mode = "check_out"
+            
+            if mode:
+                logging.info(f"[{u['name']}] ✨ Jadwal cocok untuk {mode}. Menjalankan skrip...")
                 run_for_user(u, mode, max_retries=2)
-        else:
-            for u in USERS:
-                logging.info(f"[{u['name']}] Skip (bukan jadwal user ini)")
+            else:
+                logging.info(f"[{u['name']}] ⏭️ Skip (bukan jadwal user ini).")
