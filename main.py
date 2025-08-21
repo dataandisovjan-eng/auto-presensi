@@ -11,6 +11,7 @@ from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
+from selenium.common.exceptions import TimeoutException, StaleElementReferenceException
 
 # ====== Konfigurasi umum ======
 BASE_URL = "https://dani.perhutani.co.id/login"
@@ -101,50 +102,53 @@ def close_guided_popups(driver, user, max_rounds=20):
     Jalankan beberapa putaran untuk antisipasi popup acak.
     """
     logging.info(f"[{user['name']}] 🔎 Mencari pop-up untuk ditutup...")
+    
+    # Looping untuk mengklik tombol pop-up
     for r in range(1, max_rounds + 1):
         closed_any = False
         
         # Coba klik tombol 'Next'
-        while True:
-            try:
-                btn = WebDriverWait(driver, 1.5).until(
-                    EC.element_to_be_clickable((By.XPATH, ci_xpath_contains("next")))
-                )
-                scroll_into_view(driver, btn)
-                btn.click()
-                closed_any = True
-                logging.info(f"[{user['name']}] ⏭️ Klik Next (round {r})")
-                time.sleep(0.8)
-            except Exception:
-                break
-
+        try:
+            btn = WebDriverWait(driver, 2).until(
+                EC.element_to_be_clickable((By.XPATH, ci_xpath_contains("next")))
+            )
+            scroll_into_view(driver, btn)
+            btn.click()
+            closed_any = True
+            logging.info(f"[{user['name']}] ⏭️ Klik Next (round {r})")
+            time.sleep(1.5)
+        except (TimeoutException, StaleElementReferenceException):
+            # Jika tombol 'Next' tidak ditemukan, coba cari tombol 'Finish'
+            pass
+        
         # Coba klik tombol 'Finish' atau 'Selesai'
         try:
-            btn = WebDriverWait(driver, 1.5).until(
+            btn = WebDriverWait(driver, 2).until(
                 EC.element_to_be_clickable((By.XPATH, ci_xpath_contains("finish")))
             )
             scroll_into_view(driver, btn)
             btn.click()
             closed_any = True
             logging.info(f"[{user['name']}] 🏁 Klik Finish (round {r})")
-            time.sleep(0.8)
-        except Exception:
+            time.sleep(1.5)
+        except (TimeoutException, StaleElementReferenceException):
+            # Jika tombol 'Finish' tidak ditemukan, coba cari tombol 'Selesai'
             pass
 
         try:
-            btn = WebDriverWait(driver, 1.5).until(
+            btn = WebDriverWait(driver, 2).until(
                 EC.element_to_be_clickable((By.XPATH, ci_xpath_contains("selesai")))
             )
             scroll_into_view(driver, btn)
             btn.click()
             closed_any = True
             logging.info(f"[{user['name']}] 🏁 Klik Selesai (round {r})")
-            time.sleep(0.8)
-        except Exception:
+            time.sleep(1.5)
+        except (TimeoutException, StaleElementReferenceException):
             pass
 
         if not closed_any:
-            # tidak ada popup lagi yang terdeteksi
+            # Tidak ada pop-up yang terdeteksi, keluar dari loop
             logging.info(f"[{user['name']}] 🎉 Semua pop-up ditutup setelah {r} round.")
             break
 
