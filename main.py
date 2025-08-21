@@ -211,41 +211,33 @@ def login(driver, user):
     wait_dom_ready(driver)
     logging.info(f"[{user['name']}] ✅ Form login tersubmit")
 
+def get_presensi_status_text(driver):
+    """
+    Mencari dan mengembalikan teks status presensi (e.g., "Sudah Check In").
+    """
+    try:
+        status_element = WebDriverWait(driver, 5).until(
+            EC.presence_of_element_located((By.XPATH, ci_xpath_contains("check")))
+        )
+        return status_element.text
+    except TimeoutException:
+        return "" # Mengembalikan string kosong jika tidak ditemukan
+
 def is_presensi_success(driver, user):
     """
-    Memeriksa keberhasilan presensi dengan mencari indikator "Sudah Check Out"
-    dan memastikan tombol presensi tidak aktif lagi.
+    Memeriksa keberhasilan presensi dengan mencari indikator "Sudah" di teks status.
     """
     logging.info(f"[{user['name']}] ⏳ Memverifikasi status presensi...")
     
-    # Prioritas 1: Cari teks 'Sudah Check Out'
-    try:
-        WebDriverWait(driver, 5).until(
-            EC.presence_of_element_located((By.XPATH, ci_xpath_contains("sudah check out")))
-        )
-        logging.info(f"[{user['name']}] ✅ Teks 'Sudah Check Out' ditemukan. Presensi berhasil!")
-        return True
-    except TimeoutException:
-        pass # Lanjut ke pemeriksaan berikutnya
-        
-    # Prioritas 2: Pastikan tombol presensi tidak lagi dapat diklik
-    btn_xpath = ci_xpath_contains("klik disini untuk presensi")
-    try:
-        btn = WebDriverWait(driver, 5).until(
-            EC.presence_of_element_located((By.XPATH, btn_xpath))
-        )
-        # Jika elemen ditemukan, periksa apakah disabled
-        if not btn.is_enabled():
-            logging.info(f"[{user['name']}] ✅ Tombol presensi tidak aktif lagi. Presensi berhasil!")
+    # Tunggu 10 detik agar status berubah
+    for _ in range(10):
+        status_text = get_presensi_status_text(driver)
+        if "sudah" in status_text.lower():
+            logging.info(f"[{user['name']}] ✅ Teks '{status_text}' ditemukan. Presensi berhasil!")
             return True
-    except TimeoutException:
-        # Jika tombol tidak ditemukan, asumsikan sudah menghilang dan berhasil
-        logging.info(f"[{user['name']}] ✅ Tombol presensi tidak lagi di halaman. Presensi berhasil!")
-        return True
-    except Exception as e:
-        logging.warning(f"[{user['name']}] ⚠️ Gagal memeriksa status tombol: {e}")
-        
-    logging.warning(f"[{user['name']}] ❌ Tidak ada indikator keberhasilan yang ditemukan.")
+        time.sleep(1)
+
+    logging.warning(f"[{user['name']}] ❌ Tidak ada indikator keberhasilan yang ditemukan. Status terakhir: '{get_presensi_status_text(driver)}'")
     return False
 
 def lakukan_presensi(driver, user, mode="check_in"):
