@@ -1,23 +1,16 @@
-name: Presensi
+name: presensi
 
 on:
-  workflow_dispatch:
-    inputs:
-      force_user:
-        description: "User ID untuk presensi manual (contoh: user1)"
-        required: false
-      force_mode:
-        description: "Mode presensi (check_in/check_out)"
-        required: false
   schedule:
-    - cron: "30 22 * * *"   # 05:30 WIB check-in
-    - cron: "5 9 * * *"     # 16:05 WIB check-out
+    - cron: "30 22 * * 1-5"   # jam 05:30 WIB (22:30 UTC)
+    - cron: "5 9 * * 1-5"     # jam 16:05 WIB (09:05 UTC)
+  workflow_dispatch: {}
 
 jobs:
-  presensi:
+  run:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout repository
+      - name: Checkout repo
         uses: actions/checkout@v4
 
       - name: Setup Python
@@ -29,21 +22,22 @@ jobs:
         run: |
           pip install selenium pytz
 
+      - name: Install Chrome
+        uses: browser-actions/setup-chrome@v1
+
       - name: Run presensi script
         env:
-          USER1_USERNAME: ${{ secrets.USER1_USERNAME }}
-          USER1_PASSWORD: ${{ secrets.USER1_PASSWORD }}
-          USER2_USERNAME: ${{ secrets.USER2_USERNAME }}
-          USER2_PASSWORD: ${{ secrets.USER2_PASSWORD }}
-          FORCE_USER: ${{ github.event.inputs.force_user }}
-          FORCE_MODE: ${{ github.event.inputs.force_mode }}
+          USER1: ${{ secrets.USER1 }}
+          PASS1: ${{ secrets.PASS1 }}
+          USER2: ${{ secrets.USER2 }}
+          PASS2: ${{ secrets.PASS2 }}
         run: |
           python main.py
 
-      - name: Upload logs & screenshots
+      - name: Upload log & screenshot
         uses: actions/upload-artifact@v4
         with:
           name: presensi-artifacts
           path: |
-            logs/
-            screenshots/
+            *.log
+            *.png
