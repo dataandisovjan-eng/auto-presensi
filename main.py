@@ -217,7 +217,7 @@ def lakukan_presensi(driver, user, mode="check_in"):
       - bereskan popup Next/Finish berulang
       - klik tombol oranye 'klik disini untuk presensi'
       - di popup konfirmasi, klik lagi tombol sama
-    Dengan retry yang kuat di setiap langkah.
+      - verifikasi status akhir (berhasil)
     """
     # Pastikan popup guided/announcement ditutup
     close_guided_popups(driver, user, max_attempts=30)
@@ -248,25 +248,30 @@ def lakukan_presensi(driver, user, mode="check_in"):
     if not ok2:
         raise RuntimeError("Tidak bisa klik tombol konfirmasi presensi di popup.")
     
-    # Tunggu dan verifikasi status check out telah berhasil
+    # Tunggu dan verifikasi status akhir
     logging.info(f"[{user['name']}] ⏳ Menunggu konfirmasi presensi...")
-    max_wait = 25 # detik
-    wait_start = time.time()
-    while time.time() - wait_start < max_wait:
-        # Cek apakah elemen 'Belum Check Out' masih ada
-        try:
-            WebDriverWait(driver, 2).until(
-                EC.presence_of_element_located((By.XPATH, ci_xpath_contains("belum check out")))
-            )
-            # Elemen masih ada, berarti presensi belum tercatat.
-            time.sleep(1.5)
-        except TimeoutException:
-            # Elemen tidak ditemukan, berarti presensi berhasil
-            logging.info(f"[{user['name']}] ✅ Presensi check-out berhasil diverifikasi.")
-            break
+    max_wait = 30 # detik
+    
+    # Logika verifikasi yang lebih robust berdasarkan mode (check_in atau check_out)
+    if mode == "check_out":
+        # Jika mode check-out, tunggu teks "Sudah Check Out"
+        status_xpath = ci_xpath_contains("sudah check out")
+        success_msg = "✅ Presensi check-out berhasil diverifikasi."
+        fail_msg = "❌ Presensi check-out gagal diverifikasi."
     else:
-        # Jika loop selesai tanpa 'break'
-        logging.warning(f"[{user['name']}] ⚠️ Gagal memverifikasi status check-out setelah {max_wait} detik.")
+        # Jika mode check-in, tunggu teks "Sudah Check In" (asumsi)
+        status_xpath = ci_xpath_contains("sudah check in")
+        success_msg = "✅ Presensi check-in berhasil diverifikasi."
+        fail_msg = "❌ Presensi check-in gagal diverifikasi."
+
+    try:
+        WebDriverWait(driver, max_wait).until(
+            EC.presence_of_element_located((By.XPATH, status_xpath))
+        )
+        logging.info(f"[{user['name']}] {success_msg}")
+    except TimeoutException:
+        logging.error(f"[{user['name']}] {fail_msg}")
+        raise RuntimeError("Verifikasi status presensi gagal. Status tidak berubah dalam waktu yang ditentukan.")
         
     time.sleep(6.0) # Jeda lebih lama untuk proses presensi
     # Simpan screenshot bukti
