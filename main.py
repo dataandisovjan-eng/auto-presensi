@@ -1,164 +1,146 @@
 import os
 import time
 import logging
-from datetime import datetime
 import pytz
+from datetime import datetime
 from selenium import webdriver
 from selenium.webdriver.common.by import By
-from selenium.webdriver.common.keys import Keys
-from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
+from selenium.webdriver.chrome.options import Options
 
-# setup logging
+# === Konfigurasi Logging ===
 logging.basicConfig(
+    filename="presensi.log",
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s",
-    handlers=[
-        logging.FileHandler("presensi.log", encoding="utf-8"),
-        logging.StreamHandler()
-    ]
 )
 
-# daftar user (ambil dari secrets di workflow)
+# === Data User ===
 USERS = [
-    {"name": "Pak Budi", "secret_user": "USER1", "secret_pass": "PASS1"},
-    {"name": "Bu Sari", "secret_user": "USER2", "secret_pass": "PASS2"},
+    {
+        "name": "Andi",  # user1 diganti Andi
+        "username": os.getenv("USER1_USERNAME"),
+        "password": os.getenv("USER1_PASSWORD"),
+    },
+    {
+        "name": "Bu Sari",  # user2 tetap
+        "username": os.getenv("USER2_USERNAME"),
+        "password": os.getenv("USER2_PASSWORD"),
+    },
 ]
 
-# jadwal presensi
+# === Jadwal Default Presensi ===
 JADWAL = {
-    "check_in": "05:30",
+    "check_in": "05:30",   # dimajukan
     "check_out": "16:05",
 }
 
-URL_LOGIN = "https://dani.perhutani.co.id/login"
-
+# === Helper Waktu ===
 def now_jkt():
-    tz = pytz.timezone("Asia/Jakarta")
-    return datetime.now(tz)
+    return datetime.now(pytz.timezone("Asia/Jakarta"))
 
-def wait_and_click(driver, by, selector, timeout=15):
-    """Tunggu elemen sampai clickable lalu klik"""
-    el = WebDriverWait(driver, timeout).until(
-        EC.element_to_be_clickable((by, selector))
-    )
-    driver.execute_script("arguments[0].scrollIntoView(true);", el)
-    time.sleep(0.3)
-    el.click()
-    return el
+# === Fungsi Presensi ===
+def presensi(user, mode):
+    logging.info(f"[{user['name']}] 🌐 Membuka halaman login...")
+    try:
+        chrome_opts = Options()
+        chrome_opts.add_argument("--headless=new")
+        chrome_opts.add_argument("--no-sandbox")
+        chrome_opts.add_argument("--disable-dev-shm-usage")
+        driver = webdriver.Chrome(options=chrome_opts)
 
-def safe_find_input(driver, name="npk", timeout=15):
-    """Cari input login, pastikan visible & clickable"""
-    selectors = [
-        (By.NAME, name),
-        (By.ID, name),
-        (By.CSS_SELECTOR, "input[type='text']"),
-        (By.TAG_NAME, "input"),
-    ]
-    for by, sel in selectors:
-        try:
-            el = WebDriverWait(driver, timeout).until(
-                EC.element_to_be_clickable((by, sel))
-            )
-            driver.execute_script("arguments[0].scrollIntoView(true);", el)
-            time.sleep(0.3)
-            return el
-        except:
-            continue
-    raise Exception("❌ Tidak bisa menemukan field login NPK")
+        driver.get("https://dani.perhutani.co.id/login")
 
-def login(driver, user):
-    username = os.getenv(user["secret_user"])
-    password = os.getenv(user["secret_pass"])
+        wait = WebDriverWait(driver, 15)
 
-    logging.info(f"[{user['name']}] 🔐 Proses login...")
+        # Login form
+        npk_input = wait.until(EC.presence_of_element_located((By.NAME, "npk")))
+        npk_input.clear()
+        npk_input.send_keys(user["username"])
 
-    # isi username
-    username_field = safe_find_input(driver, "npk")
-    username_field.clear()
-    username_field.send_keys(username)
+        password_input = driver.find_element(By.NAME, "password")
+        password_input.clear()
+        password_input.send_keys(user["password"])
 
-    # isi password
-    password_field = WebDriverWait(driver, 15).until(
-        EC.element_to_be_clickable((By.NAME, "password"))
-    )
-    driver.execute_script("arguments[0].scrollIntoView(true);", password_field)
-    time.sleep(0.3)
-    password_field.clear()
-    password_field.send_keys(password)
-    password_field.send_keys(Keys.RETURN)
+        driver.find_element(By.CSS_SELECTOR, "button[type='submit']").click()
 
-    logging.info(f"[{user['name']}] ✅ Login form submitted")
-
-def handle_popup(driver, user):
-    """Tutup popup 'Next' sampai selesai"""
-    while True:
-        try:
-            next_btn = WebDriverWait(driver, 3).until(
-                EC.element_to_be_clickable((By.XPATH, "//button[contains(.,'Next') or contains(.,'next')]"))
-            )
-            next_btn.click()
-            logging.info(f"[{user['name']}] ⏭️ Klik Next popup")
-            time.sleep(1)
-        except:
+        # Handle popup "Next" sampai ketemu "Finish"
+        while True:
             try:
-                finish_btn = driver.find_element(By.XPATH, "//button[contains(.,'Finish') or contains(.,'finish')]")
-                finish_btn.click()
-                logging.info(f"[{user['name']}] 🏁 Klik Finish popup")
+                next_btn = WebDriverWait(driver, 3).until(
+                    EC.element_to_be_clickable((By.XPATH, "//button[contains(., 'Next')]"))
+                )
+                next_btn.click()
                 time.sleep(1)
             except:
-                break
+                try:
+                    finish_btn = driver.find_element(By.XPATH, "//button[contains(., 'Finish')]")
+                    finish_btn.click()
+                    time.sleep(1)
+                    break
+                except:
+                    break
 
-def lakukan_presensi(driver, user, mode="check_in"):
-    """Klik tombol presensi"""
-    try:
-        handle_popup(driver, user)
-
-        # tombol utama
-        main_btn = wait_and_click(driver, By.XPATH, "//button[contains(.,'klik disini untuk presensi')]")
-        logging.info(f"[{user['name']}] 🟠 Klik tombol utama presensi")
-
+        # Klik tombol presensi pertama
+        presensi_btn = wait.until(
+            EC.element_to_be_clickable((By.XPATH, "//button[contains(., 'klik disini untuk presensi')]"))
+        )
+        presensi_btn.click()
         time.sleep(2)
 
-        # popup konfirmasi presensi
-        confirm_btn = wait_and_click(driver, By.XPATH, "//button[contains(.,'klik disini untuk presensi')]")
-        logging.info(f"[{user['name']}] 🟠 Klik tombol konfirmasi presensi")
+        # Popup konfirmasi presensi
+        confirm_btn = wait.until(
+            EC.element_to_be_clickable((By.XPATH, "//button[contains(., 'klik disini untuk presensi')]"))
+        )
+        confirm_btn.click()
+        time.sleep(2)
 
-        time.sleep(3)
-        driver.save_screenshot(f"{user['name']}_{mode}.png")
-        logging.info(f"[{user['name']}] ✅ Presensi {mode} selesai")
-    except Exception as e:
-        driver.save_screenshot(f"{user['name']}_{mode}_error.png")
-        logging.error(f"[{user['name']}] ❌ Error saat presensi: {e}")
+        # Screenshot hasil
+        ss_file = f"screenshot_{user['name']}_{mode}.png"
+        driver.save_screenshot(ss_file)
 
-def presensi(user, mode):
-    options = Options()
-    options.add_argument("--headless=new")
-    options.add_argument("--disable-gpu")
-    options.add_argument("--no-sandbox")
-
-    driver = webdriver.Chrome(options=options)
-    try:
-        driver.get(URL_LOGIN)
-        logging.info(f"[{user['name']}] 🌐 Membuka halaman login...")
-
-        login(driver, user)
-        time.sleep(5)  # tunggu redirect selesai
-
-        lakukan_presensi(driver, user, mode)
-
-    finally:
+        logging.info(f"[{user['name']}] ✅ Berhasil {mode}")
         driver.quit()
 
+    except Exception as e:
+        logging.error(f"[{user['name']}] ❌ Error saat presensi: {e}")
+        try:
+            ss_file = f"error_{user['name']}_{mode}.png"
+            driver.save_screenshot(ss_file)
+        except:
+            pass
+        driver.quit()
+
+# === Main Logic ===
 if __name__ == "__main__":
     now = now_jkt()
     logging.info(f"⏰ Sekarang {now.strftime('%Y-%m-%d %H:%M')} (Asia/Jakarta)")
 
-    for user in USERS:
-        if now.strftime("%H:%M") == JADWAL["check_in"]:
-            presensi(user, "check_in")
-        elif now.strftime("%H:%M") == JADWAL["check_out"]:
-            presensi(user, "check_out")
-        else:
-            logging.info(f"[{user['name']}] Skip (bukan jadwal user ini)")
+    force_user = os.getenv("FORCE_USER", "").strip()
+    force_mode = os.getenv("FORCE_MODE", "").strip()
+
+    # 🔧 Default jika manual run tanpa input
+    if os.getenv("GITHUB_EVENT_NAME") == "workflow_dispatch":
+        if not force_user:
+            force_user = "all"
+        if not force_mode:
+            # Default check_in pagi, check_out sore
+            if now.hour >= 12:
+                force_mode = "check_out"
+            else:
+                force_mode = "check_in"
+
+    if force_mode and force_user:
+        logging.info(f"⚡ Manual run: user={force_user}, mode={force_mode}")
+        for user in USERS:
+            if force_user.lower() == "all" or force_user.lower() == user["name"].lower():
+                presensi(user, force_mode)
+    else:
+        for user in USERS:
+            if now.strftime("%H:%M") == JADWAL["check_in"]:
+                presensi(user, "check_in")
+            elif now.strftime("%H:%M") == JADWAL["check_out"]:
+                presensi(user, "check_out")
+            else:
+                logging.info(f"[{user['name']}] Skip (bukan jadwal user ini)")
