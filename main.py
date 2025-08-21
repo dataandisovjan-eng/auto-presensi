@@ -143,13 +143,13 @@ def login(driver, user):
 
     # Field NPK (username) - pencarian lebih robust
     npk_candidates = [
+        (By.CSS_SELECTOR, "input[placeholder*='NPK']"),
+        (By.CSS_SELECTOR, "input[placeholder*='Username']"),
         (By.NAME, "npk"),
         (By.ID, "npk"),
         (By.CSS_SELECTOR, "input[name='npk']"),
         (By.CSS_SELECTOR, "input[type='text']"),
-        (By.XPATH, "//input[contains(@placeholder, 'NPK') or contains(@placeholder, 'Username')]"),
     ]
-
     npk_field = None
     for by, sel in npk_candidates:
         try:
@@ -166,11 +166,11 @@ def login(driver, user):
 
     # Field password - pencarian lebih robust
     pwd_candidates = [
+        (By.CSS_SELECTOR, "input[placeholder*='Password']"),
         (By.NAME, "password"),
         (By.ID, "password"),
         (By.CSS_SELECTOR, "input[name='password']"),
         (By.CSS_SELECTOR, "input[type='password']"),
-        (By.XPATH, "//input[contains(@placeholder, 'Password')]"),
     ]
     pwd_field = None
     for by, sel in pwd_candidates:
@@ -202,28 +202,34 @@ def lakukan_presensi(driver, user, mode="check_in"):
     """
     # Pastikan popup guided/announcement ditutup
     close_guided_popups(driver, user, max_rounds=8)
+    time.sleep(1.0) # Tambahan jeda untuk memastikan DOM stabil
 
-    # Klik tombol utama (kartu oranye)
+    # Mencari tombol utama ("klik disini untuk presensi")
     btn_xpath = ci_xpath_contains("klik disini untuk presensi")
-    ok = try_click(driver, By.XPATH, btn_xpath, attempts=4, delay=0.8, name_desc="Tombol Presensi Utama")
+    btn_candidates = [
+        (By.XPATH, btn_xpath),
+        (By.CSS_SELECTOR, ".card-body.text-center.p-5"), # Berdasarkan analisis gambar Anda
+        (By.CSS_SELECTOR, "button[onclick*='presensi']"),
+    ]
+    ok = False
+    for by, sel in btn_candidates:
+        ok = try_click(driver, by, sel, attempts=4, delay=0.8, name_desc="Tombol Presensi Utama")
+        if ok:
+            break
     if not ok:
-        # Coba lagi setelah menunggu sejenak, mungkin elemen belum muncul sempurna
-        time.sleep(2)
-        ok = try_click(driver, By.XPATH, btn_xpath, attempts=4, delay=0.8, name_desc="Tombol Presensi Utama (retry)")
-        if not ok:
-            raise RuntimeError("Tidak bisa klik tombol presensi utama.")
+        raise RuntimeError("Tidak bisa klik tombol presensi utama.")
 
     # Tunggu popup konfirmasi
-    time.sleep(1.2)
+    time.sleep(1.5) # Tambahan jeda
     # tutup popup yang mungkin ikut muncul lagi
     close_guided_popups(driver, user, max_rounds=3)
 
-    # Klik tombol konfirmasi di popup
+    # Klik tombol konfirmasi di popup (tombol yang sama di dalam pop-up)
     ok2 = try_click(driver, By.XPATH, btn_xpath, attempts=5, delay=1.0, name_desc="Tombol Konfirmasi Presensi (Popup)")
     if not ok2:
         raise RuntimeError("Tidak bisa klik tombol konfirmasi presensi di popup.")
 
-    time.sleep(2.0)
+    time.sleep(3.0) # Jeda lebih lama untuk proses presensi
     # Simpan screenshot bukti
     ss_ok = os.path.join(ARTIFACT_DIR, f"{user['name']}_{mode}.png")
     driver.save_screenshot(ss_ok)
