@@ -251,7 +251,7 @@ def lakukan_presensi(driver, user, mode="check_in"):
     
     # Tunggu dan verifikasi status check out telah berhasil
     logging.info(f"[{user['name']}] ⏳ Menunggu konfirmasi presensi...")
-    max_wait = 15 # detik
+    max_wait = 20 # detik
     wait_start = time.time()
     while time.time() - wait_start < max_wait:
         # Cek apakah elemen 'Belum Check Out' masih ada
