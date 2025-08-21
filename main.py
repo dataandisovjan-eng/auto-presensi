@@ -213,30 +213,40 @@ def login(driver, user):
 
 def is_presensi_success_final(driver, user, mode):
     """
-    Memeriksa keberhasilan presensi dengan mencari indikator yang lebih spesifik.
+    Memverifikasi keberhasilan presensi dengan mencari indikator yang lebih fleksibel.
     """
-    logging.info(f"[{user['name']}] ⏳ Memverifikasi status presensi dengan indikator yang lebih spesifik...")
+    logging.info(f"[{user['name']}] ⏳ Memverifikasi status presensi dengan indikator yang lebih fleksibel...")
     
-    if mode == "check_out":
-        success_text = "sudah check out"
-    else: # check_in
-        success_text = "sudah check in"
-
-    # Tunggu 15 detik agar status berubah
-    for _ in range(15):
+    # Cari teks yang mengindikasikan keberhasilan
+    success_keywords = ["berhasil", "sukses", "successfully", "check out"]
+    if mode == "check_in":
+        success_keywords.append("check in")
+    
+    # Tunggu 30 detik untuk memberikan waktu bagi status berubah
+    for _ in range(30):
         try:
-            # Cari elemen yang berisi teks indikator keberhasilan
-            status_element = driver.find_element(By.XPATH, f"//*[contains(translate(text(),'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'{success_text}')]")
+            body_text = driver.find_element(By.TAG_NAME, "body").text.lower()
             
-            if status_element:
-                logging.info(f"[{user['name']}] ✅ Teks '{success_text}' ditemukan. Presensi berhasil!")
+            # Cek apakah salah satu kata kunci keberhasilan ada di halaman
+            for keyword in success_keywords:
+                if keyword in body_text:
+                    logging.info(f"[{user['name']}] ✅ Teks '{keyword}' ditemukan. Presensi berhasil!")
+                    return True
+
+            # Opsi alternatif: Cari tombol presensi utama dan cek apakah dia sudah tidak aktif
+            btn_presensi_utama = driver.find_element(By.XPATH, ci_xpath_contains("klik disini untuk presensi"))
+            if "disabled" in btn_presensi_utama.get_attribute("class").lower() or "opacity-50" in btn_presensi_utama.get_attribute("class").lower():
+                logging.info(f"[{user['name']}] ✅ Tombol presensi utama sudah tidak aktif. Presensi berhasil!")
                 return True
+
         except (NoSuchElementException, StaleElementReferenceException):
             pass
+        except Exception as e:
+            logging.warning(f"⚠️ Gagal cek status: {e}")
 
         time.sleep(1)
 
-    logging.warning(f"[{user['name']}] ❌ Tidak ada indikator '{success_text}' yang ditemukan.")
+    logging.warning(f"[{user['name']}] ❌ Tidak ada indikator keberhasilan yang ditemukan setelah menunggu.")
     return False
 
 def lakukan_presensi(driver, user, mode="check_in"):
