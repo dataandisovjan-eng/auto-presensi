@@ -103,51 +103,50 @@ def close_guided_popups(driver, user, max_attempts=30):
     total_clicks = 0
 
     while total_clicks < max_attempts:
-        closed_any = False
+        clicked_any = False
         
-        # Coba klik tombol 'Next'
+        # Prioritas 1: Klik tombol 'Next' jika ada
         try:
             btn_next = WebDriverWait(driver, 2).until(
                 EC.element_to_be_clickable((By.XPATH, ci_xpath_contains("next")))
             )
             scroll_into_view(driver, btn_next)
             btn_next.click()
-            closed_any = True
+            clicked_any = True
             total_clicks += 1
             logging.info(f"[{user['name']}] ⏭️ Klik Next (total: {total_clicks})")
             time.sleep(1.5)
         except (TimeoutException, StaleElementReferenceException):
             pass
 
-        # Setelah mencoba 'Next', cek apakah tombol 'Finish' atau 'Selesai' muncul
+        # Prioritas 2: Klik tombol 'Finish' jika ada
         try:
             btn_finish = WebDriverWait(driver, 2).until(
                 EC.element_to_be_clickable((By.XPATH, ci_xpath_contains("finish")))
             )
             scroll_into_view(driver, btn_finish)
             btn_finish.click()
-            closed_any = True
+            clicked_any = True
             logging.info(f"[{user['name']}] 🏁 Klik Finish")
             time.sleep(2)
-            break  # Keluar dari loop setelah klik 'Finish'
         except (TimeoutException, StaleElementReferenceException):
             pass
 
+        # Prioritas 3: Klik tombol 'Selesai' jika ada
         try:
             btn_selesai = WebDriverWait(driver, 2).until(
                 EC.element_to_be_clickable((By.XPATH, ci_xpath_contains("selesai")))
             )
             scroll_into_view(driver, btn_selesai)
             btn_selesai.click()
-            closed_any = True
+            clicked_any = True
             logging.info(f"[{user['name']}] 🏁 Klik Selesai")
             time.sleep(2)
-            break  # Keluar dari loop setelah klik 'Selesai'
         except (TimeoutException, StaleElementReferenceException):
             pass
-
-        # Jika tidak ada tombol yang diklik pada putaran ini, keluar dari loop
-        if not closed_any:
+        
+        # Jika tidak ada tombol yang diklik pada putaran ini, asumsikan semua popup telah ditutup dan keluar dari loop
+        if not clicked_any:
             logging.info(f"[{user['name']}] 🎉 Semua pop-up berhasil ditutup.")
             break
 
