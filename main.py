@@ -92,7 +92,7 @@ def try_click(driver, by, selector, attempts=3, delay=0.6, name_desc=""):
         logging.error(f"❌ Gagal klik {name_desc} setelah {attempts} percobaan: {last_err}")
     return False
 
-def close_guided_popups(driver, user, max_rounds=8):
+def close_guided_popups(driver, user, max_rounds=15):
     """
     Tutup popup bertingkat/beruntun:
     - klik 'Next' berulang kali
@@ -129,6 +129,7 @@ def close_guided_popups(driver, user, max_rounds=8):
 
         if not closed_any:
             # tidak ada popup lagi
+            logging.info(f"[{user['name']}] 🎉 Semua pop-up ditutup setelah {r} round.")
             break
 
 def login(driver, user):
@@ -201,8 +202,8 @@ def lakukan_presensi(driver, user, mode="check_in"):
     Dengan retry yang kuat di setiap langkah.
     """
     # Pastikan popup guided/announcement ditutup
-    close_guided_popups(driver, user, max_rounds=8)
-    time.sleep(1.0) # Tambahan jeda untuk memastikan DOM stabil
+    close_guided_popups(driver, user, max_rounds=15)
+    time.sleep(1.5) # Tambahan jeda untuk memastikan DOM stabil
 
     # Mencari tombol utama ("klik disini untuk presensi")
     btn_xpath = ci_xpath_contains("klik disini untuk presensi")
@@ -220,16 +221,16 @@ def lakukan_presensi(driver, user, mode="check_in"):
         raise RuntimeError("Tidak bisa klik tombol presensi utama.")
 
     # Tunggu popup konfirmasi
-    time.sleep(1.5) # Tambahan jeda
+    time.sleep(2.0) # Tambahan jeda
     # tutup popup yang mungkin ikut muncul lagi
-    close_guided_popups(driver, user, max_rounds=3)
+    close_guided_popups(driver, user, max_rounds=5)
 
     # Klik tombol konfirmasi di popup (tombol yang sama di dalam pop-up)
     ok2 = try_click(driver, By.XPATH, btn_xpath, attempts=5, delay=1.0, name_desc="Tombol Konfirmasi Presensi (Popup)")
     if not ok2:
         raise RuntimeError("Tidak bisa klik tombol konfirmasi presensi di popup.")
 
-    time.sleep(3.0) # Jeda lebih lama untuk proses presensi
+    time.sleep(4.0) # Jeda lebih lama untuk proses presensi
     # Simpan screenshot bukti
     ss_ok = os.path.join(ARTIFACT_DIR, f"{user['name']}_{mode}.png")
     driver.save_screenshot(ss_ok)
