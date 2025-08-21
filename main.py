@@ -247,7 +247,27 @@ def lakukan_presensi(driver, user, mode="check_in"):
     ok2 = try_click(driver, By.XPATH, btn_xpath, attempts=5, delay=1.0, name_desc="Tombol Konfirmasi Presensi (Popup)")
     if not ok2:
         raise RuntimeError("Tidak bisa klik tombol konfirmasi presensi di popup.")
-
+    
+    # Tunggu dan verifikasi status check out telah berhasil
+    logging.info(f"[{user['name']}] ⏳ Menunggu konfirmasi presensi...")
+    max_wait = 15 # detik
+    wait_start = time.time()
+    while time.time() - wait_start < max_wait:
+        # Cek apakah elemen 'Belum Check Out' masih ada
+        try:
+            WebDriverWait(driver, 2).until(
+                EC.presence_of_element_located((By.XPATH, ci_xpath_contains("belum check out")))
+            )
+            # Elemen masih ada, berarti presensi belum tercatat.
+            time.sleep(1)
+        except TimeoutException:
+            # Elemen tidak ditemukan, berarti presensi berhasil
+            logging.info(f"[{user['name']}] ✅ Presensi check-out berhasil diverifikasi.")
+            break
+    else:
+        # Jika loop selesai tanpa 'break'
+        logging.warning(f"[{user['name']}] ⚠️ Gagal memverifikasi status check-out setelah {max_wait} detik.")
+        
     time.sleep(5.0) # Jeda lebih lama untuk proses presensi
     # Simpan screenshot bukti
     ss_ok = os.path.join(ARTIFACT_DIR, f"{user['name']}_{mode}.png")
