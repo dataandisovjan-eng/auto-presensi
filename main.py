@@ -240,29 +240,42 @@ def lakukan_presensi(driver, user, mode="check_in"):
         logging.info(f"[{user['name']}] ✅ Tombol presensi tidak dapat diklik, menganggap presensi sudah dilakukan.")
         return True
 
-    # Tunggu popup konfirmasi
-    time.sleep(3.5) # Tambahan jeda
-    # tutup popup yang mungkin ikut muncul lagi
-    close_guided_popups(driver, user, max_attempts=5)
+    # Tambahkan jeda untuk memastikan pop-up konfirmasi muncul
+    time.sleep(3.5)
+    
+    # Mencoba menutup pop-up lagi, kali ini lebih agresif
+    logging.info(f"[{user['name']}] 🔎 Mencari pop-up tambahan setelah klik pertama...")
+    close_guided_popups(driver, user, max_attempts=10)
 
     # Klik tombol konfirmasi di popup (tombol yang sama di dalam pop-up)
     ok2 = try_click(driver, By.XPATH, btn_xpath, attempts=5, delay=1.0, name_desc="Tombol Konfirmasi Presensi (Popup)")
     if not ok2:
         raise RuntimeError("Tidak bisa klik tombol konfirmasi presensi di popup.")
     
+    # Tambahkan jeda setelah klik konfirmasi
+    time.sleep(5.0)
+
     # Tunggu dan verifikasi status akhir
     logging.info(f"[{user['name']}] ⏳ Menunggu konfirmasi presensi...")
     max_wait = 30 # detik
     
     # Logika verifikasi yang baru: tunggu tombol presensi utama menghilang dari DOM
+    # atau verifikasi teks 'Sudah Check Out'
     try:
         WebDriverWait(driver, max_wait).until(
             EC.staleness_of(btn_presensi_utama)
         )
         logging.info(f"[{user['name']}] ✅ Tombol presensi utama telah menghilang. Presensi berhasil!")
     except TimeoutException:
-        logging.error(f"[{user['name']}] ❌ Tombol presensi utama tidak menghilang dalam waktu yang ditentukan.")
-        raise RuntimeError("Verifikasi status presensi gagal. Tombol tidak menghilang.")
+        logging.info(f"[{user['name']}] ⚠️ Tombol presensi utama tidak menghilang, mencoba verifikasi dengan teks 'Sudah Check Out'...")
+        try:
+            WebDriverWait(driver, 10).until(
+                EC.presence_of_element_located((By.XPATH, ci_xpath_contains("sudah check out")))
+            )
+            logging.info(f"[{user['name']}] ✅ Teks 'Sudah Check Out' ditemukan. Presensi berhasil!")
+        except TimeoutException:
+            logging.error(f"[{user['name']}] ❌ Verifikasi status presensi gagal. Tombol tidak menghilang dan teks 'Sudah Check Out' tidak ditemukan.")
+            raise RuntimeError("Verifikasi status presensi gagal.")
         
     time.sleep(6.0) # Jeda lebih lama untuk proses presensi
     # Simpan screenshot bukti
