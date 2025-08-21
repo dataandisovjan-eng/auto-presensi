@@ -1,19 +1,21 @@
 {
   "timezone": "Asia/Jakarta",
-  "base_url": "https://dani.perhutani.co.id/login",
   "users": [
     {
       "id": "user1",
       "name": "Pak Budi",
+      "secret_user": "USER1_USERNAME",
+      "secret_pass": "USER1_PASSWORD",
       "check_in": "05:30",
       "check_out": "16:05"
     },
     {
       "id": "user2",
       "name": "Bu Sari",
-      "check_in": "05:30",
-      "check_out": "16:05"
+      "secret_user": "USER2_USERNAME",
+      "secret_pass": "USER2_PASSWORD",
+      "check_in": "07:00",
+      "check_out": "16:30"
     }
-  ],
-  "tolerance_minutes": 10
+  ]
 }
