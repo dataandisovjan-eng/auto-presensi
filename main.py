@@ -222,7 +222,7 @@ def lakukan_presensi(driver, user, mode="check_in"):
     """
     # Pastikan popup guided/announcement ditutup
     close_guided_popups(driver, user, max_attempts=30)
-    time.sleep(2.0) # Tambahan jeda untuk memastikan DOM stabil
+    time.sleep(3.0) # Tambahan jeda untuk memastikan DOM stabil
 
     # Tunggu tombol utama ("klik disini untuk presensi") muncul dan bisa diklik
     logging.info(f"[{user['name']}] ⏳ Menunggu tombol presensi...")
@@ -240,7 +240,7 @@ def lakukan_presensi(driver, user, mode="check_in"):
         raise RuntimeError("Tidak bisa klik tombol presensi utama.")
 
     # Tunggu popup konfirmasi
-    time.sleep(2.5) # Tambahan jeda
+    time.sleep(3.5) # Tambahan jeda
     # tutup popup yang mungkin ikut muncul lagi
     close_guided_popups(driver, user, max_attempts=5)
 
@@ -251,7 +251,7 @@ def lakukan_presensi(driver, user, mode="check_in"):
     
     # Tunggu dan verifikasi status check out telah berhasil
     logging.info(f"[{user['name']}] ⏳ Menunggu konfirmasi presensi...")
-    max_wait = 20 # detik
+    max_wait = 25 # detik
     wait_start = time.time()
     while time.time() - wait_start < max_wait:
         # Cek apakah elemen 'Belum Check Out' masih ada
@@ -260,7 +260,7 @@ def lakukan_presensi(driver, user, mode="check_in"):
                 EC.presence_of_element_located((By.XPATH, ci_xpath_contains("belum check out")))
             )
             # Elemen masih ada, berarti presensi belum tercatat.
-            time.sleep(1)
+            time.sleep(1.5)
         except TimeoutException:
             # Elemen tidak ditemukan, berarti presensi berhasil
             logging.info(f"[{user['name']}] ✅ Presensi check-out berhasil diverifikasi.")
@@ -269,7 +269,7 @@ def lakukan_presensi(driver, user, mode="check_in"):
         # Jika loop selesai tanpa 'break'
         logging.warning(f"[{user['name']}] ⚠️ Gagal memverifikasi status check-out setelah {max_wait} detik.")
         
-    time.sleep(5.0) # Jeda lebih lama untuk proses presensi
+    time.sleep(6.0) # Jeda lebih lama untuk proses presensi
     # Simpan screenshot bukti
     ss_ok = os.path.join(ARTIFACT_DIR, f"{user['name']}_{mode}.png")
     driver.save_screenshot(ss_ok)
