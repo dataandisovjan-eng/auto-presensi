@@ -2,7 +2,6 @@ name: Presensi Otomatis
 
 on:
   schedule:
-    # Presensi dijalankan setiap 15 menit untuk mengecek apakah sudah waktunya
     - cron: "*/15 * * * *"
   workflow_dispatch:
     inputs:
