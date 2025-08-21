@@ -97,56 +97,58 @@ def close_guided_popups(driver, user, max_attempts=20):
     """
     Tutup popup bertingkat/beruntun.
     - Loop dan klik 'Next' sampai tidak ada lagi.
-    - Setelah 'Next' habis, klik 'Finish' atau 'Selesai'.
+    - Jika 'Finish' atau 'Selesai' ditemukan, klik dan keluar.
     """
     logging.info(f"[{user['name']}] 🔎 Mencari pop-up untuk ditutup...")
-    
-    # Loop untuk mengklik tombol 'Next'
-    for _ in range(max_attempts):
+
+    # Looping untuk mengklik tombol 'Next' dan 'Finish'
+    for attempt in range(max_attempts):
+        closed_any = False
+        
+        # Coba klik tombol 'Next' terlebih dahulu
         try:
-            # Cari tombol 'Next' dan klik
-            btn_next = WebDriverWait(driver, 2).until(
+            btn = WebDriverWait(driver, 2).until(
                 EC.element_to_be_clickable((By.XPATH, ci_xpath_contains("next")))
             )
-            scroll_into_view(driver, btn_next)
-            btn_next.click()
-            logging.info(f"[{user['name']}] ⏭️ Klik Next")
-            time.sleep(1.5) # Jeda untuk memuat pop-up berikutnya
-        except (TimeoutException, StaleElementReferenceException):
-            # Tombol 'Next' tidak ditemukan, keluar dari loop
-            break
-    
-    # Setelah semua 'Next' diklik, cari tombol 'Finish' atau 'Selesai'
-    closed_final = False
-    try:
-        btn_finish = WebDriverWait(driver, 5).until(
-            EC.element_to_be_clickable((By.XPATH, ci_xpath_contains("finish")))
-        )
-        scroll_into_view(driver, btn_finish)
-        btn_finish.click()
-        closed_final = True
-        logging.info(f"[{user['name']}] 🏁 Klik Finish")
-        time.sleep(2)
-    except (TimeoutException, StaleElementReferenceException):
-        pass
-
-    if not closed_final:
-        try:
-            btn_selesai = WebDriverWait(driver, 5).until(
-                EC.element_to_be_clickable((By.XPATH, ci_xpath_contains("selesai")))
-            )
-            scroll_into_view(driver, btn_selesai)
-            btn_selesai.click()
-            closed_final = True
-            logging.info(f"[{user['name']}] 🏁 Klik Selesai")
-            time.sleep(2)
+            scroll_into_view(driver, btn)
+            btn.click()
+            closed_any = True
+            logging.info(f"[{user['name']}] ⏭️ Klik Next (percobaan {attempt+1})")
+            time.sleep(1.5)
         except (TimeoutException, StaleElementReferenceException):
             pass
-    
-    if not closed_final:
-        logging.info(f"[{user['name']}] 🎉 Tidak ada pop-up 'Next', 'Finish', atau 'Selesai' yang ditemukan.")
-    else:
-        logging.info(f"[{user['name']}] 🎉 Semua pop-up berhasil ditutup.")
+
+        # Setelah mencoba 'Next', cek apakah tombol 'Finish' atau 'Selesai' muncul
+        try:
+            btn = WebDriverWait(driver, 2).until(
+                EC.element_to_be_clickable((By.XPATH, ci_xpath_contains("finish")))
+            )
+            scroll_into_view(driver, btn)
+            btn.click()
+            logging.info(f"[{user['name']}] 🏁 Klik Finish")
+            closed_any = True
+            time.sleep(2)
+            break  # Keluar dari loop setelah klik 'Finish'
+        except (TimeoutException, StaleElementReferenceException):
+            pass
+
+        try:
+            btn = WebDriverWait(driver, 2).until(
+                EC.element_to_be_clickable((By.XPATH, ci_xpath_contains("selesai")))
+            )
+            scroll_into_view(driver, btn)
+            btn.click()
+            logging.info(f"[{user['name']}] 🏁 Klik Selesai")
+            closed_any = True
+            time.sleep(2)
+            break  # Keluar dari loop setelah klik 'Selesai'
+        except (TimeoutException, StaleElementReferenceException):
+            pass
+
+        # Jika tidak ada tombol yang diklik pada putaran ini, keluar dari loop
+        if not closed_any:
+            logging.info(f"[{user['name']}] 🎉 Semua pop-up berhasil ditutup.")
+            break
 
 def login(driver, user):
     username = os.getenv(user["secret_user"])
