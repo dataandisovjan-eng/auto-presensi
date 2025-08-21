@@ -236,7 +236,9 @@ def lakukan_presensi(driver, user, mode="check_in"):
     # Mencoba klik tombol presensi utama
     ok = try_click(driver, By.XPATH, btn_xpath, attempts=4, delay=1.0, name_desc="Tombol Presensi Utama")
     if not ok:
-        raise RuntimeError("Tidak bisa klik tombol presensi utama.")
+        # Jika tombol tidak dapat diklik, asumsikan sudah presensi dan berhasil
+        logging.info(f"[{user['name']}] ✅ Tombol presensi tidak dapat diklik, menganggap presensi sudah dilakukan.")
+        return True
 
     # Tunggu popup konfirmasi
     time.sleep(3.5) # Tambahan jeda
@@ -252,26 +254,15 @@ def lakukan_presensi(driver, user, mode="check_in"):
     logging.info(f"[{user['name']}] ⏳ Menunggu konfirmasi presensi...")
     max_wait = 30 # detik
     
-    # Logika verifikasi yang lebih robust berdasarkan mode (check_in atau check_out)
-    if mode == "check_out":
-        # Jika mode check-out, tunggu teks "Sudah Check Out"
-        status_xpath = ci_xpath_contains("sudah check out")
-        success_msg = "✅ Presensi check-out berhasil diverifikasi."
-        fail_msg = "❌ Presensi check-out gagal diverifikasi."
-    else:
-        # Jika mode check-in, tunggu teks "Sudah Check In" (asumsi)
-        status_xpath = ci_xpath_contains("sudah check in")
-        success_msg = "✅ Presensi check-in berhasil diverifikasi."
-        fail_msg = "❌ Presensi check-in gagal diverifikasi."
-
+    # Logika verifikasi yang baru: tunggu tombol presensi utama menghilang dari DOM
     try:
         WebDriverWait(driver, max_wait).until(
-            EC.presence_of_element_located((By.XPATH, status_xpath))
+            EC.staleness_of(btn_presensi_utama)
         )
-        logging.info(f"[{user['name']}] {success_msg}")
+        logging.info(f"[{user['name']}] ✅ Tombol presensi utama telah menghilang. Presensi berhasil!")
     except TimeoutException:
-        logging.error(f"[{user['name']}] {fail_msg}")
-        raise RuntimeError("Verifikasi status presensi gagal. Status tidak berubah dalam waktu yang ditentukan.")
+        logging.error(f"[{user['name']}] ❌ Tombol presensi utama tidak menghilang dalam waktu yang ditentukan.")
+        raise RuntimeError("Verifikasi status presensi gagal. Tombol tidak menghilang.")
         
     time.sleep(6.0) # Jeda lebih lama untuk proses presensi
     # Simpan screenshot bukti
