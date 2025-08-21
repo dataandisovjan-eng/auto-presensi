@@ -93,53 +93,54 @@ def try_click(driver, by, selector, attempts=3, delay=0.6, name_desc=""):
         logging.error(f"❌ Gagal klik {name_desc} setelah {attempts} percobaan: {last_err}")
     return False
 
-def close_guided_popups(driver, user, max_attempts=20):
+def close_guided_popups(driver, user, max_attempts=30):
     """
     Tutup popup bertingkat/beruntun.
     - Loop dan klik 'Next' sampai tidak ada lagi.
     - Jika 'Finish' atau 'Selesai' ditemukan, klik dan keluar.
     """
     logging.info(f"[{user['name']}] 🔎 Mencari pop-up untuk ditutup...")
+    total_clicks = 0
 
-    # Looping untuk mengklik tombol 'Next' dan 'Finish'
-    for attempt in range(max_attempts):
+    while total_clicks < max_attempts:
         closed_any = False
         
-        # Coba klik tombol 'Next' terlebih dahulu
+        # Coba klik tombol 'Next'
         try:
-            btn = WebDriverWait(driver, 2).until(
+            btn_next = WebDriverWait(driver, 2).until(
                 EC.element_to_be_clickable((By.XPATH, ci_xpath_contains("next")))
             )
-            scroll_into_view(driver, btn)
-            btn.click()
+            scroll_into_view(driver, btn_next)
+            btn_next.click()
             closed_any = True
-            logging.info(f"[{user['name']}] ⏭️ Klik Next (percobaan {attempt+1})")
+            total_clicks += 1
+            logging.info(f"[{user['name']}] ⏭️ Klik Next (total: {total_clicks})")
             time.sleep(1.5)
         except (TimeoutException, StaleElementReferenceException):
             pass
 
         # Setelah mencoba 'Next', cek apakah tombol 'Finish' atau 'Selesai' muncul
         try:
-            btn = WebDriverWait(driver, 2).until(
+            btn_finish = WebDriverWait(driver, 2).until(
                 EC.element_to_be_clickable((By.XPATH, ci_xpath_contains("finish")))
             )
-            scroll_into_view(driver, btn)
-            btn.click()
-            logging.info(f"[{user['name']}] 🏁 Klik Finish")
+            scroll_into_view(driver, btn_finish)
+            btn_finish.click()
             closed_any = True
+            logging.info(f"[{user['name']}] 🏁 Klik Finish")
             time.sleep(2)
             break  # Keluar dari loop setelah klik 'Finish'
         except (TimeoutException, StaleElementReferenceException):
             pass
 
         try:
-            btn = WebDriverWait(driver, 2).until(
+            btn_selesai = WebDriverWait(driver, 2).until(
                 EC.element_to_be_clickable((By.XPATH, ci_xpath_contains("selesai")))
             )
-            scroll_into_view(driver, btn)
-            btn.click()
-            logging.info(f"[{user['name']}] 🏁 Klik Selesai")
+            scroll_into_view(driver, btn_selesai)
+            btn_selesai.click()
             closed_any = True
+            logging.info(f"[{user['name']}] 🏁 Klik Selesai")
             time.sleep(2)
             break  # Keluar dari loop setelah klik 'Selesai'
         except (TimeoutException, StaleElementReferenceException):
@@ -220,21 +221,21 @@ def lakukan_presensi(driver, user, mode="check_in"):
     Dengan retry yang kuat di setiap langkah.
     """
     # Pastikan popup guided/announcement ditutup
-    close_guided_popups(driver, user, max_attempts=20)
+    close_guided_popups(driver, user, max_attempts=30)
     time.sleep(2.0) # Tambahan jeda untuk memastikan DOM stabil
 
-    # Mencari tombol utama ("klik disini untuk presensi")
+    # Tunggu tombol utama ("klik disini untuk presensi") muncul dan bisa diklik
+    logging.info(f"[{user['name']}] ⏳ Menunggu tombol presensi...")
     btn_xpath = ci_xpath_contains("klik disini untuk presensi")
-    btn_candidates = [
-        (By.XPATH, btn_xpath),
-        (By.CSS_SELECTOR, ".card-body.text-center.p-5"), # Berdasarkan analisis gambar Anda
-        (By.CSS_SELECTOR, "button[onclick*='presensi']"),
-    ]
-    ok = False
-    for by, sel in btn_candidates:
-        ok = try_click(driver, by, sel, attempts=4, delay=1.0, name_desc="Tombol Presensi Utama")
-        if ok:
-            break
+    
+    try:
+        btn_presensi_utama = safe_find_clickable(driver, By.XPATH, btn_xpath, timeout=20)
+        logging.info(f"[{user['name']}] ✅ Tombol presensi utama ditemukan.")
+    except TimeoutException:
+        raise RuntimeError("Tombol presensi utama tidak muncul setelah menutup pop-up.")
+        
+    # Mencoba klik tombol presensi utama
+    ok = try_click(driver, By.XPATH, btn_xpath, attempts=4, delay=1.0, name_desc="Tombol Presensi Utama")
     if not ok:
         raise RuntimeError("Tidak bisa klik tombol presensi utama.")
 
