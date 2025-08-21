@@ -11,7 +11,7 @@ from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
-from selenium.common.exceptions import TimeoutException, StaleElementReferenceException
+from selenium.common.exceptions import TimeoutException, StaleElementReferenceException, NoSuchElementException
 
 # ====== Konfigurasi umum ======
 BASE_URL = "https://dani.perhutani.co.id/login"
@@ -211,6 +211,43 @@ def login(driver, user):
     wait_dom_ready(driver)
     logging.info(f"[{user['name']}] ✅ Form login tersubmit")
 
+def is_presensi_success(driver, user):
+    """
+    Memeriksa keberhasilan presensi dengan mencari indikator "Sudah Check Out"
+    dan memastikan tombol presensi tidak aktif lagi.
+    """
+    logging.info(f"[{user['name']}] ⏳ Memverifikasi status presensi...")
+    
+    # Prioritas 1: Cari teks 'Sudah Check Out'
+    try:
+        WebDriverWait(driver, 5).until(
+            EC.presence_of_element_located((By.XPATH, ci_xpath_contains("sudah check out")))
+        )
+        logging.info(f"[{user['name']}] ✅ Teks 'Sudah Check Out' ditemukan. Presensi berhasil!")
+        return True
+    except TimeoutException:
+        pass # Lanjut ke pemeriksaan berikutnya
+        
+    # Prioritas 2: Pastikan tombol presensi tidak lagi dapat diklik
+    btn_xpath = ci_xpath_contains("klik disini untuk presensi")
+    try:
+        btn = WebDriverWait(driver, 5).until(
+            EC.presence_of_element_located((By.XPATH, btn_xpath))
+        )
+        # Jika elemen ditemukan, periksa apakah disabled
+        if not btn.is_enabled():
+            logging.info(f"[{user['name']}] ✅ Tombol presensi tidak aktif lagi. Presensi berhasil!")
+            return True
+    except TimeoutException:
+        # Jika tombol tidak ditemukan, asumsikan sudah menghilang dan berhasil
+        logging.info(f"[{user['name']}] ✅ Tombol presensi tidak lagi di halaman. Presensi berhasil!")
+        return True
+    except Exception as e:
+        logging.warning(f"[{user['name']}] ⚠️ Gagal memeriksa status tombol: {e}")
+        
+    logging.warning(f"[{user['name']}] ❌ Tidak ada indikator keberhasilan yang ditemukan.")
+    return False
+
 def lakukan_presensi(driver, user, mode="check_in"):
     """
     Alur:
@@ -242,40 +279,31 @@ def lakukan_presensi(driver, user, mode="check_in"):
 
     # Tambahkan jeda untuk memastikan pop-up konfirmasi muncul
     time.sleep(3.5)
-    
+
     # Mencoba menutup pop-up lagi, kali ini lebih agresif
     logging.info(f"[{user['name']}] 🔎 Mencari pop-up tambahan setelah klik pertama...")
     close_guided_popups(driver, user, max_attempts=10)
 
-    # Klik tombol konfirmasi di popup (tombol yang sama di dalam pop-up)
-    ok2 = try_click(driver, By.XPATH, btn_xpath, attempts=5, delay=1.0, name_desc="Tombol Konfirmasi Presensi (Popup)")
-    if not ok2:
-        raise RuntimeError("Tidak bisa klik tombol konfirmasi presensi di popup.")
+    # Mencari dan klik tombol konfirmasi di dalam popup yang mungkin muncul
+    # Tombol ini seringkali memiliki teks "OK", "Ya", "Konfirmasi", dll.
+    confirm_btn_xpath = "//*[(self::button or self::a or self::div or self::span) and (contains(text(), 'OK') or contains(text(), 'Ya') or contains(text(), 'Konfirmasi') or contains(text(), 'Submit'))]"
+    try:
+        confirm_button = WebDriverWait(driver, 5).until(EC.element_to_be_clickable((By.XPATH, confirm_btn_xpath)))
+        logging.info(f"[{user['name']}] ✅ Tombol konfirmasi di pop-up ditemukan. Mencoba mengklik...")
+        scroll_into_view(driver, confirm_button)
+        confirm_button.click()
+        logging.info(f"[{user['name']}] ✅ Klik: Tombol Konfirmasi (Popup)")
+    except TimeoutException:
+        logging.info(f"[{user['name']}] ⏭️ Tidak ada tombol konfirmasi pop-up tambahan yang ditemukan. Lanjut.")
+    except Exception as e:
+        logging.warning(f"⚠️ Gagal klik tombol konfirmasi pop-up: {e}")
     
     # Tambahkan jeda setelah klik konfirmasi
     time.sleep(5.0)
 
-    # Tunggu dan verifikasi status akhir
-    logging.info(f"[{user['name']}] ⏳ Menunggu konfirmasi presensi...")
-    max_wait = 30 # detik
-    
-    # Logika verifikasi yang baru: tunggu tombol presensi utama menghilang dari DOM
-    # atau verifikasi teks 'Sudah Check Out'
-    try:
-        WebDriverWait(driver, max_wait).until(
-            EC.staleness_of(btn_presensi_utama)
-        )
-        logging.info(f"[{user['name']}] ✅ Tombol presensi utama telah menghilang. Presensi berhasil!")
-    except TimeoutException:
-        logging.info(f"[{user['name']}] ⚠️ Tombol presensi utama tidak menghilang, mencoba verifikasi dengan teks 'Sudah Check Out'...")
-        try:
-            WebDriverWait(driver, 10).until(
-                EC.presence_of_element_located((By.XPATH, ci_xpath_contains("sudah check out")))
-            )
-            logging.info(f"[{user['name']}] ✅ Teks 'Sudah Check Out' ditemukan. Presensi berhasil!")
-        except TimeoutException:
-            logging.error(f"[{user['name']}] ❌ Verifikasi status presensi gagal. Tombol tidak menghilang dan teks 'Sudah Check Out' tidak ditemukan.")
-            raise RuntimeError("Verifikasi status presensi gagal.")
+    # Verifikasi status akhir
+    if not is_presensi_success(driver, user):
+        raise RuntimeError("Verifikasi status presensi gagal.")
         
     time.sleep(6.0) # Jeda lebih lama untuk proses presensi
     # Simpan screenshot bukti
