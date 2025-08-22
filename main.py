@@ -8,6 +8,8 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException, NoSuchElementException, WebDriverException
+# Impor WebDriverManager untuk manajemen driver otomatis
+from webdriver_manager.chrome import ChromeDriverManager
 
 # Konfigurasi logging untuk mencatat aktivitas skrip ke dalam file
 log_filename = "presensi.log"
@@ -33,9 +35,11 @@ def setup_driver():
         chrome_options.add_argument("--disable-dev-shm-usage")
         chrome_options.add_argument("--window-size=1920,1080")
         chrome_options.add_argument("--log-level=3")  # Matikan logging dari browser
-        # Gunakan path driver dari environment atau path default
-        driver_path = os.environ.get('CHROME_DRIVER_PATH', 'path/to/chromedriver')
-        service = ChromeService(executable_path=driver_path)
+        
+        # PERBAIKAN: Gunakan fitur manajemen driver otomatis dari Selenium
+        # Ini akan secara otomatis mengunduh dan mengatur chromedriver yang sesuai
+        # sehingga tidak perlu lagi menentukan path-nya secara manual.
+        service = ChromeService(ChromeDriverManager().install())
         driver = webdriver.Chrome(service=service, options=chrome_options)
         driver.set_page_load_timeout(60)
         logging.info("✅ Driver siap.")
