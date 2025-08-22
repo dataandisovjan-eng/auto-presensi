@@ -70,17 +70,27 @@ def main():
         logging.info("🌐 Buka halaman login...")
         driver.get(url_login)
 
-        # PERBAIKAN UTAMA: Menggunakan XPATH yang mencari field input berdasarkan labelnya
-        # Ini lebih tangguh jika atribut ID atau nama elemen berubah
+        # PERBAIKAN: Mencari iframe dan beralih ke dalamnya jika ditemukan
+        try:
+            logging.info("🔎 Mencari iframe...")
+            iframe = WebDriverWait(driver, 10).until(
+                EC.presence_of_element_located((By.TAG_NAME, "iframe"))
+            )
+            driver.switch_to.frame(iframe)
+            logging.info("✅ Berhasil beralih ke iframe.")
+        except TimeoutException:
+            logging.info("Tidak ada iframe ditemukan. Lanjut mencari elemen di halaman utama.")
+
+        # Perbaikan utama: Menggunakan XPATH yang lebih tangguh
         logging.info("🔎 Mencari field username...")
         username_input = WebDriverWait(driver, 30).until(
-            EC.element_to_be_clickable((By.XPATH, "//input[@name='npk' or @id='username'] | //label[contains(text(), 'USERNAME')]/following-sibling::input"))
+            EC.element_to_be_clickable((By.XPATH, "//input[@name='npk' or @id='username' or @placeholder='Username'] | //label[contains(text(), 'USERNAME')]/following-sibling::input"))
         )
         logging.info("✅ Field username ditemukan.")
         
         logging.info("🔎 Mencari field password...")
         password_input = WebDriverWait(driver, 30).until(
-            EC.element_to_be_clickable((By.XPATH, "//input[@name='password' or @id='password'] | //label[contains(text(), 'PASSWORD')]/following-sibling::input"))
+            EC.element_to_be_clickable((By.XPATH, "//input[@name='password' or @id='password' or @placeholder='Password'] | //label[contains(text(), 'PASSWORD')]/following-sibling::input"))
         )
         logging.info("✅ Field password ditemukan.")
         
@@ -92,8 +102,9 @@ def main():
         password_input.send_keys(Keys.RETURN)
         logging.info("✅ Form login tersubmit.")
         
-        # Tambahkan delay singkat setelah login
-        time.sleep(3)
+        # Pindah kembali ke konten utama setelah login
+        driver.switch_to.default_content()
+        logging.info("✅ Kembali ke konten utama.")
 
         # Mencari dan menutup semua pop-up yang mungkin muncul
         logging.info("🔎 Mencari dan menutup pop-up...")
