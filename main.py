@@ -8,8 +8,6 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException, NoSuchElementException, WebDriverException
-# Impor WebDriverManager untuk manajemen driver otomatis
-from webdriver_manager.chrome import ChromeDriverManager
 
 # Konfigurasi logging untuk mencatat aktivitas skrip ke dalam file
 log_filename = "presensi.log"
@@ -29,17 +27,16 @@ def setup_driver():
         # Nonaktifkan notifikasi pop-up browser
         chrome_options.add_experimental_option("prefs", {"profile.default_content_setting_values.notifications": 2})
         # Tambahkan opsi untuk mode headless agar tidak membuka jendela browser
-        # chrome_options.add_argument("--headless")
+        chrome_options.add_argument("--headless=new")
         chrome_options.add_argument("--disable-gpu")
         chrome_options.add_argument("--no-sandbox")
         chrome_options.add_argument("--disable-dev-shm-usage")
         chrome_options.add_argument("--window-size=1920,1080")
         chrome_options.add_argument("--log-level=3")  # Matikan logging dari browser
         
-        # PERBAIKAN: Gunakan fitur manajemen driver otomatis dari Selenium
-        # Ini akan secara otomatis mengunduh dan mengatur chromedriver yang sesuai
-        # sehingga tidak perlu lagi menentukan path-nya secara manual.
-        service = ChromeService(ChromeDriverManager().install())
+        # PERBAIKAN: Menggunakan Service() tanpa WebDriverManager.
+        # Ini akan bekerja di lingkungan yang sudah memiliki chromedriver di PATH.
+        service = ChromeService()
         driver = webdriver.Chrome(service=service, options=chrome_options)
         driver.set_page_load_timeout(60)
         logging.info("✅ Driver siap.")
