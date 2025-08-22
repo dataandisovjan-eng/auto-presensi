@@ -11,7 +11,7 @@ from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
-from selenium.common.exceptions import TimeoutException, StaleElementReferenceException, NoSuchElementException
+from selenium.common.exceptions import TimeoutException, StaleElementReferenceException, NoSuchElementException, WebDriverException
 
 # ====== Konfigurasi umum ======
 BASE_URL = "https://dani.perhutani.co.id/login"
@@ -62,7 +62,7 @@ def scroll_into_view(driver, el):
     time.sleep(0.25)
 
 def ci_xpath_contains(text_substr: str):
-    # Case-insensitive contains untuk banyak tag klik-able
+    # Case-insensitive contains for multiple clickable tags
     t = text_substr.lower()
     return (
         "//*[(self::button or self::a or self::div or self::span or self::p or self::h1 or self::h2 or self::h3)"
@@ -95,9 +95,9 @@ def try_click(driver, by, selector, attempts=3, delay=0.6, name_desc=""):
 
 def close_guided_popups(driver, user, max_attempts=30):
     """
-    Tutup popup bertingkat/beruntun.
-    - Loop dan klik 'Next' sampai tidak ada lagi.
-    - Jika 'Finish' atau 'Selesai' ditemukan, klik dan keluar.
+    Close tiered/sequential popups.
+    - Loop and click 'Next' until there are no more.
+    - If 'Finish' or 'Selesai' is found, click and exit.
     """
     logging.info(f"[{user['name']}] 🔎 Mencari pop-up untuk ditutup...")
     total_clicks = 0
@@ -105,7 +105,7 @@ def close_guided_popups(driver, user, max_attempts=30):
     while total_clicks < max_attempts:
         clicked_any = False
         
-        # Prioritas 1: Klik tombol 'Next' jika ada
+        # Priority 1: Click 'Next' button if present
         try:
             btn_next = WebDriverWait(driver, 2).until(
                 EC.element_to_be_clickable((By.XPATH, ci_xpath_contains("next")))
@@ -116,10 +116,10 @@ def close_guided_popups(driver, user, max_attempts=30):
             total_clicks += 1
             logging.info(f"[{user['name']}] ⏭️ Klik Next (total: {total_clicks})")
             time.sleep(1.5)
-        except (TimeoutException, StaleElementReferenceException):
+        except (TimeoutException, StaleElementReferenceException, WebDriverException):
             pass
 
-        # Prioritas 2: Klik tombol 'Finish' jika ada
+        # Priority 2: Click 'Finish' button if present
         try:
             btn_finish = WebDriverWait(driver, 2).until(
                 EC.element_to_be_clickable((By.XPATH, ci_xpath_contains("finish")))
@@ -129,10 +129,10 @@ def close_guided_popups(driver, user, max_attempts=30):
             clicked_any = True
             logging.info(f"[{user['name']}] 🏁 Klik Finish")
             time.sleep(2)
-        except (TimeoutException, StaleElementReferenceException):
+        except (TimeoutException, StaleElementReferenceException, WebDriverException):
             pass
 
-        # Prioritas 3: Klik tombol 'Selesai' jika ada
+        # Priority 3: Click 'Selesai' button if present
         try:
             btn_selesai = WebDriverWait(driver, 2).until(
                 EC.element_to_be_clickable((By.XPATH, ci_xpath_contains("selesai")))
@@ -142,10 +142,10 @@ def close_guided_popups(driver, user, max_attempts=30):
             clicked_any = True
             logging.info(f"[{user['name']}] 🏁 Klik Selesai")
             time.sleep(2)
-        except (TimeoutException, StaleElementReferenceException):
+        except (TimeoutException, StaleElementReferenceException, WebDriverException):
             pass
         
-        # Jika tidak ada tombol yang diklik pada putaran ini, asumsikan semua popup telah ditutup dan keluar dari loop
+        # If no button was clicked this round, assume all popups have been closed and exit the loop.
         if not clicked_any:
             logging.info(f"[{user['name']}] 🎉 Semua pop-up berhasil ditutup.")
             break
@@ -160,7 +160,7 @@ def login(driver, user):
     wait_dom_ready(driver)
     logging.info(f"[{user['name']}] 🌐 Buka halaman login")
 
-    # Field NPK (username) - pencarian lebih robust
+    # NPK (username) field - more robust search
     npk_candidates = [
         (By.CSS_SELECTOR, "input[placeholder*='NPK']"),
         (By.CSS_SELECTOR, "input[placeholder*='Username']"),
@@ -183,7 +183,7 @@ def login(driver, user):
     npk_field.clear()
     npk_field.send_keys(username)
 
-    # Field password - pencarian lebih robust
+    # Password field - more robust search
     pwd_candidates = [
         (By.CSS_SELECTOR, "input[placeholder*='Password']"),
         (By.NAME, "password"),
@@ -206,23 +206,23 @@ def login(driver, user):
     pwd_field.send_keys(password)
     pwd_field.send_keys(Keys.RETURN)
 
-    # Tunggu halaman dashboard (atau minimal DOM tenang)
+    # Wait for the dashboard page (or at least stable DOM)
     time.sleep(2.0)
     wait_dom_ready(driver)
     logging.info(f"[{user['name']}] ✅ Form login tersubmit")
 
 def is_presensi_success(driver, user, mode):
     """
-    Memverifikasi keberhasilan presensi dengan mencari indikator yang lebih fleksibel.
-    - Cek status check-in/check-out di halaman
-    - Cek tombol utama apakah sudah tidak aktif
+    Verifies attendance success by looking for more flexible indicators.
+    - Checks for check-in/check-out status text on the page.
+    - Checks if the main button is disabled.
     """
     logging.info(f"[{user['name']}] ⏳ Memverifikasi status presensi...")
     
-    # Tunggu 30 detik untuk memberikan waktu bagi status berubah
+    # Wait for 30 seconds to give the status time to change
     for _ in range(30):
         try:
-            # Cari elemen yang menampilkan status check-in dan check-out
+            # Look for elements that show check-in and check-out status
             check_in_status_el = driver.find_element(By.XPATH, "//div[contains(text(), 'Sudah Check In')]")
             check_out_status_el = driver.find_element(By.XPATH, "//div[contains(text(), 'Sudah Check Out')]")
             
@@ -234,7 +234,7 @@ def is_presensi_success(driver, user, mode):
                 logging.info(f"[{user['name']}] ✅ Status 'Sudah Check Out' ditemukan. Presensi berhasil!")
                 return True
 
-            # Alternatif: Periksa tombol presensi utama
+            # Alternative: Check the main attendance button
             btn_presensi_utama = driver.find_element(By.XPATH, ci_xpath_contains("klik disini untuk presensi"))
             if "disabled" in btn_presensi_utama.get_attribute("class").lower():
                 logging.info(f"[{user['name']}] ✅ Tombol presensi utama sudah tidak aktif. Presensi berhasil!")
@@ -252,17 +252,17 @@ def is_presensi_success(driver, user, mode):
 
 def lakukan_presensi(driver, user, mode="check_in"):
     """
-    Alur:
-      - bereskan popup Next/Finish berulang
-      - klik tombol oranye 'klik disini untuk presensi'
-      - di popup konfirmasi, klik lagi tombol sama
-      - verifikasi status akhir (berhasil)
+    Flow:
+      - Clear repeated Next/Finish popups
+      - Click the orange 'klik disini untuk presensi' button
+      - In the confirmation popup, click the same button again
+      - Verify the final status (success)
     """
-    # Pastikan popup guided/announcement ditutup
+    # Make sure guided/announcement popups are closed
     close_guided_popups(driver, user, max_attempts=30)
-    time.sleep(3.0) # Tambahan jeda untuk memastikan DOM stabil
+    time.sleep(3.0) # Additional delay to ensure the DOM is stable
 
-    # Tunggu tombol utama ("klik disini untuk presensi") muncul dan bisa diklik
+    # Wait for the main button ("klik disini untuk presensi") to appear and be clickable
     logging.info(f"[{user['name']}] ⏳ Menunggu tombol presensi utama...")
     btn_xpath = ci_xpath_contains("klik disini untuk presensi")
     
@@ -272,14 +272,14 @@ def lakukan_presensi(driver, user, mode="check_in"):
     except TimeoutException:
         raise RuntimeError("Tombol presensi utama tidak muncul setelah menutup pop-up.")
         
-    # Mencoba klik tombol presensi utama
+    # Try clicking the main attendance button
     ok = try_click(driver, By.XPATH, btn_xpath, attempts=4, delay=1.0, name_desc="Tombol Presensi Utama")
     if not ok:
-        # Jika tombol tidak dapat diklik, asumsikan sudah presensi dan berhasil
+        # If the button can't be clicked, assume attendance is already done and successful
         logging.info(f"[{user['name']}] ✅ Tombol presensi tidak dapat diklik, menganggap presensi sudah dilakukan.")
         return True
 
-    # Tunggu pop-up modal
+    # Wait for the modal popup
     try:
         modal_form = WebDriverWait(driver, 10).until(
             EC.visibility_of_element_located((By.ID, "modal-form"))
@@ -288,7 +288,7 @@ def lakukan_presensi(driver, user, mode="check_in"):
     except TimeoutException:
         raise RuntimeError("Pop-up modal presensi tidak muncul setelah mengklik tombol.")
 
-    # Mencari dan klik tombol konfirmasi di dalam popup
+    # Find and click the confirmation button inside the popup
     confirm_btn_xpath = "//div[@id='modal-form']//*[contains(text(), 'OK') or contains(text(), 'Ya') or contains(text(), 'Konfirmasi') or contains(text(), 'Submit')]"
     try:
         confirm_button = WebDriverWait(modal_form, 10).until(
@@ -303,25 +303,25 @@ def lakukan_presensi(driver, user, mode="check_in"):
     except Exception as e:
         logging.warning(f"⚠️ Gagal klik tombol konfirmasi pop-up: {e}")
     
-    # Tambahkan jeda setelah klik konfirmasi
+    # Add a delay after clicking confirmation
     time.sleep(5.0)
     
-    # Cek pop-up tambahan setelah konfirmasi (untuk jaga-jaga)
+    # Check for additional popups after confirmation (as a safeguard)
     close_guided_popups(driver, user, max_attempts=5)
     
-    # Verifikasi status akhir
+    # Verify final status
     if not is_presensi_success(driver, user, mode):
         raise RuntimeError("Verifikasi status presensi gagal.")
         
-    time.sleep(6.0) # Jeda lebih lama untuk proses presensi
-    # Simpan screenshot bukti
+    time.sleep(6.0) # Longer delay for the attendance process
+    # Save a screenshot for proof
     ss_ok = os.path.join(ARTIFACT_DIR, f"{user['name']}_{mode}.png")
     driver.save_screenshot(ss_ok)
     logging.info(f"[{user['name']}] 📸 Screenshot tersimpan: {ss_ok}")
 
 def run_for_user(user, mode, max_retries=2):
     """
-    Jalankan presensi untuk 1 user dengan retry total (ulang dari login jika gagal).
+    Run attendance for 1 user with total retries (re-login if failed).
     """
     attempt = 1
     while attempt <= max_retries:
@@ -353,7 +353,7 @@ if __name__ == "__main__":
     now = now_with_tz()
     logging.info(f"⏰ Sekarang {now.strftime('%Y-%m-%d %H:%M')} ({TIMEZONE.zone})")
 
-    # Input manual run (dari workflow_dispatch)
+    # Manual run input (from workflow_dispatch)
     force_user_input = os.getenv("FORCE_USER", "").strip().lower()
     force_mode_input = os.getenv("FORCE_MODE", "").strip().lower()
 
@@ -372,7 +372,7 @@ if __name__ == "__main__":
         for u in users_to_run:
             mode = force_mode_input
             if not mode:
-                # Jika mode tidak dispesifikasi, tentukan otomatis
+                # If no mode is specified, determine automatically
                 if now.hour >= 12:
                     mode = "check_out"
                 else:
@@ -380,7 +380,7 @@ if __name__ == "__main__":
             
             run_for_user(u, mode, max_retries=2)
     else:
-        # Mode terjadwal
+        # Scheduled mode
         hhmm = now.strftime("%H:%M")
         
         for u in CONFIG["users"]:
