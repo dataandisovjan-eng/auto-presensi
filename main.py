@@ -47,22 +47,26 @@ def setup_driver():
 def main():
     """Fungsi utama untuk menjalankan skrip presensi."""
     # Definisikan kredensial
-    # PENTING: Jangan masukkan kredensial Anda di sini.
-    # Atur sebagai variabel lingkungan atau "secrets" di platform yang Anda gunakan.
-    # Contoh: USER_ID="nama_pengguna_anda", PASSWORD="kata_sandi_anda"
-    username = os.environ.get('USER_ID')
-    password = os.environ.get('PASSWORD')
+    # PENTING: Skrip ini sekarang mencari nama variabel yang Anda gunakan di GitHub Secrets.
+    # Nama variabel yang digunakan adalah: USER1_USERNAME dan USER1_PASSWORD.
+    username = os.environ.get('USER1_USERNAME')
+    password = os.environ.get('USER1_PASSWORD')
     url_login = "https://dani.perhutani.co.id/auth/login"
 
     # Periksa ketersediaan kredensial
+    if not username:
+        logging.error("❌ Kredensial tidak ditemukan. Pastikan USER1_USERNAME sudah diatur di environment variable.")
+    if not password:
+        logging.error("❌ Kredensial tidak ditemukan. Pastikan USER1_PASSWORD sudah diatur di environment variable.")
+
     if not username or not password:
-        logging.error("❌ Kredensial tidak ditemukan. Pastikan USER_ID dan PASSWORD sudah diatur di environment variable.")
-        # Tambahkan instruksi yang lebih jelas untuk pengguna
         logging.error("➡️ CARA MEMPERBAIKI:")
-        logging.error("   1. Jika menggunakan GitHub Actions, tambahkan 'USER_ID' dan 'PASSWORD' ke Secrets repository.")
-        logging.error("   2. Jika berjalan secara lokal, atur variabel lingkungan 'USER_ID' dan 'PASSWORD' di sistem Anda.")
+        logging.error("   1. Jika menggunakan GitHub Actions, tambahkan 'USER1_USERNAME' dan 'USER1_PASSWORD' ke Secrets repository.")
+        logging.error("   2. Jika berjalan secara lokal, atur variabel lingkungan 'USER1_USERNAME' dan 'USER1_PASSWORD' di sistem Anda.")
         return
 
+    logging.info(f"✅ Kredensial ditemukan. Mencoba login sebagai: {username}")
+    
     driver = setup_driver()
     if not driver:
         return
