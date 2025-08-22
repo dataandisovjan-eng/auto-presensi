@@ -65,7 +65,7 @@ def ci_xpath_contains(text_substr: str):
     # Case-insensitive contains untuk banyak tag klik-able
     t = text_substr.lower()
     return (
-        "//*[(self::button or self::a or self::div or self::span)"
+        "//*[(self::button or self::a or self::div or self::span or self::p or self::h1 or self::h2 or self::h3)"
         " and contains(translate(normalize-space(.),"
         " 'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'"
         f"), '{t}')]"
@@ -218,9 +218,7 @@ def is_presensi_success_final(driver, user, mode):
     logging.info(f"[{user['name']}] ⏳ Memverifikasi status presensi dengan indikator yang lebih fleksibel...")
     
     # Cari teks yang mengindikasikan keberhasilan
-    success_keywords = ["berhasil", "sukses", "successfully", "check out"]
-    if mode == "check_in":
-        success_keywords.append("check in")
+    success_keywords = ["berhasil", "sukses", "successfully", "check out", "sudah check out", "sudah check in", "presensi berhasil"]
     
     # Tunggu 30 detik untuk memberikan waktu bagi status berubah
     for _ in range(30):
