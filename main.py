@@ -5,6 +5,7 @@ import logging
 from selenium import webdriver
 from selenium.webdriver.chrome.service import Service as ChromeService
 from selenium.webdriver.common.by import By
+from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException, NoSuchElementException, WebDriverException
@@ -27,14 +28,14 @@ def setup_driver():
         # Nonaktifkan notifikasi pop-up browser
         chrome_options.add_experimental_option("prefs", {"profile.default_content_setting_values.notifications": 2})
         # Tambahkan opsi untuk mode headless agar tidak membuka jendela browser
-        chrome_options.add_argument("--headless=new")
+        chrome_options.add_argument("--headless")
         chrome_options.add_argument("--disable-gpu")
         chrome_options.add_argument("--no-sandbox")
         chrome_options.add_argument("--disable-dev-shm-usage")
         chrome_options.add_argument("--window-size=1920,1080")
         chrome_options.add_argument("--log-level=3")  # Matikan logging dari browser
         
-        # PERBAIKAN: Menggunakan Service() tanpa WebDriverManager.
+        # Menggunakan Service() tanpa WebDriverManager.
         # Ini akan bekerja di lingkungan yang sudah memiliki chromedriver di PATH.
         service = ChromeService()
         driver = webdriver.Chrome(service=service, options=chrome_options)
@@ -52,7 +53,7 @@ def main():
     # Nama variabel yang digunakan adalah: USER1_USERNAME dan USER1_PASSWORD.
     username = os.environ.get('USER1_USERNAME')
     password = os.environ.get('USER1_PASSWORD')
-    url_login = "https://dani.perhutani.co.id/auth/login"
+    url_login = "https://dani.perhutani.co.id/login"
 
     # Periksa ketersediaan kredensial
     if not username:
@@ -76,17 +77,52 @@ def main():
         logging.info("🌐 Buka halaman login...")
         driver.get(url_login)
 
-        # Tunggu hingga elemen input username terlihat
-        wait = WebDriverWait(driver, 30)
-        username_input = wait.until(EC.visibility_of_element_located((By.ID, "username")))
+        # Perbaikan: Menggunakan pencarian yang lebih tangguh untuk elemen username
+        username_candidates = [
+            (By.ID, "username"),
+            (By.NAME, "npk"),
+            (By.CSS_SELECTOR, "input[name='npk']"),
+            (By.CSS_SELECTOR, "input[type='text']")
+        ]
         
+        username_input = None
+        for by, sel in username_candidates:
+            try:
+                username_input = WebDriverWait(driver, 10).until(EC.element_to_be_clickable((by, sel)))
+                logging.info("✅ Input username ditemukan.")
+                break
+            except Exception:
+                continue
+        
+        if not username_input:
+            raise RuntimeError("❌ Tidak dapat menemukan field username setelah beberapa percobaan.")
+
+        # Perbaikan: Menggunakan pencarian yang lebih tangguh untuk elemen password
+        password_candidates = [
+            (By.ID, "password"),
+            (By.NAME, "password"),
+            (By.CSS_SELECTOR, "input[name='password']"),
+            (By.CSS_SELECTOR, "input[type='password']")
+        ]
+        
+        password_input = None
+        for by, sel in password_candidates:
+            try:
+                password_input = WebDriverWait(driver, 10).until(EC.element_to_be_clickable((by, sel)))
+                logging.info("✅ Input password ditemukan.")
+                break
+            except Exception:
+                continue
+
+        if not password_input:
+            raise RuntimeError("❌ Tidak dapat menemukan field password setelah beberapa percobaan.")
+
         # Input username dan password
         username_input.send_keys(username)
-        driver.find_element(By.ID, "password").send_keys(password)
+        password_input.send_keys(password)
         
-        # Klik tombol login
-        login_button = driver.find_element(By.XPATH, "//button[contains(text(), 'Login')]")
-        login_button.click()
+        # Kirim form dengan menekan tombol Enter pada field password
+        password_input.send_keys(Keys.RETURN)
         logging.info("✅ Form login tersubmit.")
         
         # Tambahkan delay singkat setelah login
