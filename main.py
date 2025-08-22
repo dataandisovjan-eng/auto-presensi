@@ -70,28 +70,27 @@ def main():
         logging.info("🌐 Buka halaman login...")
         driver.get(url_login)
 
-        # Mencari iframe dan beralih ke dalamnya jika ditemukan
+        wait = WebDriverWait(driver, 30)
+
+        # Logika login yang lebih fleksibel, mencari elemen di halaman utama atau di dalam iframe
         try:
-            logging.info("🔎 Mencari iframe...")
-            iframe = WebDriverWait(driver, 15).until(
+            logging.info("🔎 Mencari field username di halaman utama...")
+            username_input = wait.until(EC.element_to_be_clickable((By.ID, "username")))
+            logging.info("✅ Field username ditemukan di halaman utama.")
+            driver.switch_to.default_content()
+        except TimeoutException:
+            logging.info("❌ Field username tidak ditemukan di halaman utama. Mencoba mencari di dalam iframe...")
+            iframe = wait.until(
                 EC.presence_of_element_located((By.TAG_NAME, "iframe"))
             )
             driver.switch_to.frame(iframe)
             logging.info("✅ Berhasil beralih ke iframe.")
-        except TimeoutException:
-            logging.info("Tidak ada iframe ditemukan. Lanjut mencari elemen di halaman utama.")
+            username_input = wait.until(EC.element_to_be_clickable((By.ID, "username")))
+            logging.info("✅ Field username ditemukan di dalam iframe.")
 
-        # Logika login dikembalikan ke cara yang lebih sederhana
-        wait = WebDriverWait(driver, 30)
-
-        logging.info("🔎 Mencari field username...")
-        username_input = wait.until(EC.element_to_be_clickable((By.ID, "username")))
-        logging.info("✅ Field username ditemukan.")
+        # Lanjutkan mengisi form dan klik login
         username_input.send_keys(username)
-
-        logging.info("🔎 Mencari field password...")
-        password_input = wait.until(EC.element_to_be_clickable((By.ID, "password")))
-        logging.info("✅ Field password ditemukan.")
+        password_input = driver.find_element(By.ID, "password")
         password_input.send_keys(password)
         
         # Mencari tombol login
