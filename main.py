@@ -49,19 +49,14 @@ def setup_driver():
 def main():
     """Fungsi utama untuk menjalankan skrip presensi."""
     # Definisikan kredensial
-    # PENTING: Skrip ini sekarang mencari nama variabel yang Anda gunakan di GitHub Secrets.
-    # Nama variabel yang digunakan adalah: USER1_USERNAME dan USER1_PASSWORD.
     username = os.environ.get('USER1_USERNAME')
     password = os.environ.get('USER1_PASSWORD')
+    # Menggunakan URL login yang lebih sesuai berdasarkan log
     url_login = "https://dani.perhutani.co.id/login"
 
     # Periksa ketersediaan kredensial
-    if not username:
-        logging.error("❌ Kredensial tidak ditemukan. Pastikan USER1_USERNAME sudah diatur di environment variable.")
-    if not password:
-        logging.error("❌ Kredensial tidak ditemukan. Pastikan USER1_PASSWORD sudah diatur di environment variable.")
-
     if not username or not password:
+        logging.error("❌ Kredensial tidak ditemukan. Pastikan 'USER1_USERNAME' dan 'USER1_PASSWORD' sudah diatur.")
         logging.error("➡️ CARA MEMPERBAIKI:")
         logging.error("   1. Jika menggunakan GitHub Actions, tambahkan 'USER1_USERNAME' dan 'USER1_PASSWORD' ke Secrets repository.")
         logging.error("   2. Jika berjalan secara lokal, atur variabel lingkungan 'USER1_USERNAME' dan 'USER1_PASSWORD' di sistem Anda.")
@@ -77,46 +72,19 @@ def main():
         logging.info("🌐 Buka halaman login...")
         driver.get(url_login)
 
-        # Perbaikan: Menggunakan pencarian yang lebih tangguh untuk elemen username
-        username_candidates = [
-            (By.ID, "username"),
-            (By.NAME, "npk"),
-            (By.CSS_SELECTOR, "input[name='npk']"),
-            (By.CSS_SELECTOR, "input[type='text']")
-        ]
+        # PERBAIKAN: Menggunakan XPATH yang lebih spesifik untuk menemukan field username (npk) dan password
+        logging.info("🔎 Mencari field username...")
+        username_input = WebDriverWait(driver, 30).until(
+            EC.element_to_be_clickable((By.XPATH, "//input[@name='npk']"))
+        )
+        logging.info("✅ Field username ditemukan.")
         
-        username_input = None
-        for by, sel in username_candidates:
-            try:
-                username_input = WebDriverWait(driver, 10).until(EC.element_to_be_clickable((by, sel)))
-                logging.info("✅ Input username ditemukan.")
-                break
-            except Exception:
-                continue
+        logging.info("🔎 Mencari field password...")
+        password_input = WebDriverWait(driver, 30).until(
+            EC.element_to_be_clickable((By.XPATH, "//input[@name='password']"))
+        )
+        logging.info("✅ Field password ditemukan.")
         
-        if not username_input:
-            raise RuntimeError("❌ Tidak dapat menemukan field username setelah beberapa percobaan.")
-
-        # Perbaikan: Menggunakan pencarian yang lebih tangguh untuk elemen password
-        password_candidates = [
-            (By.ID, "password"),
-            (By.NAME, "password"),
-            (By.CSS_SELECTOR, "input[name='password']"),
-            (By.CSS_SELECTOR, "input[type='password']")
-        ]
-        
-        password_input = None
-        for by, sel in password_candidates:
-            try:
-                password_input = WebDriverWait(driver, 10).until(EC.element_to_be_clickable((by, sel)))
-                logging.info("✅ Input password ditemukan.")
-                break
-            except Exception:
-                continue
-
-        if not password_input:
-            raise RuntimeError("❌ Tidak dapat menemukan field password setelah beberapa percobaan.")
-
         # Input username dan password
         username_input.send_keys(username)
         password_input.send_keys(password)
