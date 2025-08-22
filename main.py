@@ -72,36 +72,41 @@ def main():
 
         wait = WebDriverWait(driver, 30)
         username_input = None
+        password_input = None
 
         # Logika pencarian yang lebih fleksibel, mencari elemen di halaman utama atau di dalam iframe
         try:
-            logging.info("🔎 Mencari field username di halaman utama...")
-            # Coba cari dengan beberapa atribut yang mungkin
-            username_input = wait.until(EC.element_to_be_clickable((By.XPATH, "//input[@id='username' or @name='username' or @placeholder='Username'] | //input[contains(@type, 'text') and contains(@class, 'form-control')]")))
-            logging.info("✅ Field username ditemukan di halaman utama.")
-            driver.switch_to.default_content()
+            logging.info("🔎 Mencari field NPK...")
+            # Coba cari dengan XPath yang lebih spesifik berdasarkan placeholder "NPK"
+            username_input = wait.until(EC.element_to_be_clickable((By.XPATH, "//input[@placeholder='NPK'] | //input[contains(@id, 'user') or contains(@name, 'user') or contains(@placeholder, 'user')]")))
+            logging.info("✅ Field NPK ditemukan.")
+            
+            # Cari field password
+            password_input = driver.find_element(By.XPATH, "//input[@placeholder='Password'] | //input[contains(@id, 'pass') or contains(@name, 'pass') or contains(@placeholder, 'pass') or contains(@type, 'password')]")
+
         except TimeoutException:
-            logging.info("❌ Field username tidak ditemukan di halaman utama. Mencoba mencari di dalam iframe...")
+            logging.info("❌ Field NPK tidak ditemukan di halaman utama. Mencoba mencari di dalam iframe...")
             try:
-                iframe = wait.until(
-                    EC.presence_of_element_located((By.TAG_NAME, "iframe"))
-                )
+                iframe = wait.until(EC.presence_of_element_located((By.TAG_NAME, "iframe")))
                 driver.switch_to.frame(iframe)
                 logging.info("✅ Berhasil beralih ke iframe.")
+                
                 # Coba cari di dalam iframe
-                username_input = wait.until(EC.element_to_be_clickable((By.XPATH, "//input[@id='username' or @name='username' or @placeholder='Username'] | //input[contains(@type, 'text') and contains(@class, 'form-control')]")))
-                logging.info("✅ Field username ditemukan di dalam iframe.")
+                username_input = wait.until(EC.element_to_be_clickable((By.XPATH, "//input[@placeholder='NPK'] | //input[contains(@id, 'user') or contains(@name, 'user') or contains(@placeholder, 'user')]")))
+                logging.info("✅ Field NPK ditemukan di dalam iframe.")
+
+                # Cari field password
+                password_input = driver.find_element(By.XPATH, "//input[@placeholder='Password'] | //input[contains(@id, 'pass') or contains(@name, 'pass') or contains(@placeholder, 'pass') or contains(@type, 'password')]")
+
             except TimeoutException:
-                logging.error("❌ Gagal menemukan iframe atau field username di dalamnya.")
+                logging.error("❌ Gagal menemukan iframe atau field NPK/Password di dalamnya.")
                 raise # Lempar kembali exception jika gagal di kedua tempat
 
-        # Lanjutkan mengisi form dan klik login jika elemen ditemukan
-        if username_input:
+        # Isi form dan klik login
+        if username_input and password_input:
             username_input.send_keys(username)
-            password_input = driver.find_element(By.XPATH, "//input[@id='password' or @name='password' or @placeholder='Password'] | //input[contains(@type, 'password') and contains(@class, 'form-control')]")
             password_input.send_keys(password)
             
-            # Mencari tombol login
             logging.info("🔎 Mencari tombol login...")
             login_button = wait.until(EC.element_to_be_clickable((By.XPATH, "//button[contains(text(), 'Login') or contains(text(), 'Masuk') or @type='submit']")))
             login_button.click()
