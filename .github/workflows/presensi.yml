@@ -2,39 +2,55 @@ name: Presensi Otomatis
 
 on:
   schedule:
-    # Check-in: 05:30 WIB = 22:30 UTC (hari sebelumnya)
-    - cron: "30 22 * * 0-4"
-    # Check-out: 16:15 WIB = 09:15 UTC
-    - cron: "15 9 * * 1-5"
+    # WIB 05:30 => UTC 22:30 (hari sebelumnya), Senin-Jumat
+    - cron: "30 22 * * 1-5"
+    # WIB 16:05 => UTC 09:05, Senin-Jumat
+    - cron: "5 9 * * 1-5"
   workflow_dispatch:
+    inputs:
+      force_user:
+        description: "Nama user (Pak Budi, Bu Sari, all)"
+        required: false
+        default: ""
+      force_mode:
+        description: "Mode (check_in / check_out)"
+        required: false
+        default: ""
 
 jobs:
   presensi:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v3
+      - name: Checkout repo
+        uses: actions/checkout@v4
 
       - name: Setup Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
-
-      - name: Install Google Chrome
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y google-chrome-stable || true
-          google-chrome --version || true
+          python-version: "3.11"
 
       - name: Install dependencies
         run: |
-          python -m pip install --upgrade pip
-          pip install selenium webdriver-manager
+          pip install -r requirements.txt
 
-      - name: Jalankan presensi otomatis
+      - name: Setup Chrome
+        uses: browser-actions/setup-chrome@v1
+
+      - name: Jalankan presensi
         env:
           USER1_USERNAME: ${{ secrets.USER1_USERNAME }}
           USER1_PASSWORD: ${{ secrets.USER1_PASSWORD }}
+          USER2_USERNAME: ${{ secrets.USER2_USERNAME }}
+          USER2_PASSWORD: ${{ secrets.USER2_PASSWORD }}
+          FORCE_USER: ${{ github.event.inputs.force_user }}
+          FORCE_MODE: ${{ github.event.inputs.force_mode }}
+          GITHUB_EVENT_NAME: ${{ github.event_name }}
         run: |
-          python presensi.py
+          python main.py
+
+      - name: Upload Log & Screenshots
+        uses: actions/upload-artifact@v4
+        with:
+          name: presensi-artifacts
+          path: artifacts/
