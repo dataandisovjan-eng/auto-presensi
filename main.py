@@ -70,7 +70,7 @@ def main():
         logging.info("🌐 Buka halaman login...")
         driver.get(url_login)
 
-        # PERBAIKAN: Mencari iframe dan beralih ke dalamnya jika ditemukan
+        # Mencari iframe dan beralih ke dalamnya jika ditemukan
         try:
             logging.info("🔎 Mencari iframe...")
             iframe = WebDriverWait(driver, 10).until(
@@ -81,27 +81,47 @@ def main():
         except TimeoutException:
             logging.info("Tidak ada iframe ditemukan. Lanjut mencari elemen di halaman utama.")
 
-        # Perbaikan utama: Menggunakan XPATH yang lebih tangguh
-        logging.info("🔎 Mencari field username...")
-        username_input = WebDriverWait(driver, 30).until(
-            EC.element_to_be_clickable((By.XPATH, "//input[@name='npk' or @id='username' or @placeholder='Username'] | //label[contains(text(), 'USERNAME')]/following-sibling::input"))
-        )
-        logging.info("✅ Field username ditemukan.")
-        
-        logging.info("🔎 Mencari field password...")
-        password_input = WebDriverWait(driver, 30).until(
-            EC.element_to_be_clickable((By.XPATH, "//input[@name='password' or @id='password' or @placeholder='Password'] | //label[contains(text(), 'PASSWORD')]/following-sibling::input"))
-        )
-        logging.info("✅ Field password ditemukan.")
-        
-        # Input username dan password
-        username_input.send_keys(username)
-        password_input.send_keys(password)
-        
-        # Kirim form dengan menekan tombol Enter pada field password
-        password_input.send_keys(Keys.RETURN)
-        logging.info("✅ Form login tersubmit.")
-        
+        # Logika pencarian yang lebih tangguh dan bertahap untuk field username
+        username_input = None
+        password_input = None
+
+        try:
+            logging.info("🔎 Mencari field username...")
+            # Coba mencari dengan XPATH yang paling umum dan fleksibel
+            username_input = WebDriverWait(driver, 60).until(
+                EC.element_to_be_clickable((By.XPATH, "//input[@id='username' or @name='username' or @name='npk' or @placeholder='Username' or contains(@id, 'user')]"))
+            )
+            logging.info("✅ Field username ditemukan.")
+        except TimeoutException:
+            logging.error("❌ Timeout: Gagal menemukan field username dalam waktu yang ditentukan.")
+            raise
+
+        try:
+            logging.info("🔎 Mencari field password...")
+            # Coba mencari dengan XPATH yang paling umum dan fleksibel
+            password_input = WebDriverWait(driver, 60).until(
+                EC.element_to_be_clickable((By.XPATH, "//input[@id='password' or @name='password' or @placeholder='Password' or contains(@id, 'pass')]"))
+            )
+            logging.info("✅ Field password ditemukan.")
+        except TimeoutException:
+            logging.error("❌ Timeout: Gagal menemukan field password dalam waktu yang ditentukan.")
+            raise
+
+        # Input username dan password jika elemen ditemukan
+        if username_input and password_input:
+            username_input.send_keys(username)
+            password_input.send_keys(password)
+            
+            # Mencari tombol login
+            logging.info("🔎 Mencari tombol login...")
+            login_button = WebDriverWait(driver, 10).until(
+                EC.element_to_be_clickable((By.XPATH, "//button[contains(text(), 'Login')] | //button[contains(text(), 'Masuk')] | //input[@type='submit' or @type='button']"))
+            )
+            login_button.click()
+            logging.info("✅ Klik tombol login.")
+        else:
+            raise Exception("Gagal menemukan field login.")
+
         # Pindah kembali ke konten utama setelah login
         driver.switch_to.default_content()
         logging.info("✅ Kembali ke konten utama.")
