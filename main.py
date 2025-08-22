@@ -47,6 +47,9 @@ def setup_driver():
 def main():
     """Fungsi utama untuk menjalankan skrip presensi."""
     # Definisikan kredensial
+    # PENTING: Jangan masukkan kredensial Anda di sini.
+    # Atur sebagai variabel lingkungan atau "secrets" di platform yang Anda gunakan.
+    # Contoh: USER_ID="nama_pengguna_anda", PASSWORD="kata_sandi_anda"
     username = os.environ.get('USER_ID')
     password = os.environ.get('PASSWORD')
     url_login = "https://dani.perhutani.co.id/auth/login"
@@ -54,6 +57,10 @@ def main():
     # Periksa ketersediaan kredensial
     if not username or not password:
         logging.error("❌ Kredensial tidak ditemukan. Pastikan USER_ID dan PASSWORD sudah diatur di environment variable.")
+        # Tambahkan instruksi yang lebih jelas untuk pengguna
+        logging.error("➡️ CARA MEMPERBAIKI:")
+        logging.error("   1. Jika menggunakan GitHub Actions, tambahkan 'USER_ID' dan 'PASSWORD' ke Secrets repository.")
+        logging.error("   2. Jika berjalan secara lokal, atur variabel lingkungan 'USER_ID' dan 'PASSWORD' di sistem Anda.")
         return
 
     driver = setup_driver()
@@ -147,4 +154,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
