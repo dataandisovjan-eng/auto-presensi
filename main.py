@@ -36,7 +36,6 @@ def setup_driver():
         chrome_options.add_argument("--log-level=3")  # Matikan logging dari browser
         
         # Menggunakan Service() tanpa WebDriverManager.
-        # Ini akan bekerja di lingkungan yang sudah memiliki chromedriver di PATH.
         service = ChromeService()
         driver = webdriver.Chrome(service=service, options=chrome_options)
         driver.set_page_load_timeout(60)
@@ -51,7 +50,6 @@ def main():
     # Definisikan kredensial
     username = os.environ.get('USER1_USERNAME')
     password = os.environ.get('USER1_PASSWORD')
-    # Menggunakan URL login yang lebih sesuai berdasarkan log
     url_login = "https://dani.perhutani.co.id/login"
 
     # Periksa ketersediaan kredensial
@@ -72,16 +70,17 @@ def main():
         logging.info("🌐 Buka halaman login...")
         driver.get(url_login)
 
-        # PERBAIKAN: Menggunakan XPATH yang lebih spesifik untuk menemukan field username (npk) dan password
+        # PERBAIKAN UTAMA: Menggunakan XPATH yang mencari field input berdasarkan labelnya
+        # Ini lebih tangguh jika atribut ID atau nama elemen berubah
         logging.info("🔎 Mencari field username...")
         username_input = WebDriverWait(driver, 30).until(
-            EC.element_to_be_clickable((By.XPATH, "//input[@name='npk']"))
+            EC.element_to_be_clickable((By.XPATH, "//input[@name='npk' or @id='username'] | //label[contains(text(), 'USERNAME')]/following-sibling::input"))
         )
         logging.info("✅ Field username ditemukan.")
         
         logging.info("🔎 Mencari field password...")
         password_input = WebDriverWait(driver, 30).until(
-            EC.element_to_be_clickable((By.XPATH, "//input[@name='password']"))
+            EC.element_to_be_clickable((By.XPATH, "//input[@name='password' or @id='password'] | //label[contains(text(), 'PASSWORD')]/following-sibling::input"))
         )
         logging.info("✅ Field password ditemukan.")
         
@@ -103,22 +102,19 @@ def main():
             logging.info("Pop-up 'Next' ditemukan. Memproses...")
             for btn in popup_next_buttons:
                 try:
-                    # Klik tombol 'Next'
                     btn.click()
                     logging.info("⏭️ Klik Next")
-                    time.sleep(2) # Beri waktu untuk pop-up berikutnya muncul
+                    time.sleep(2)
                 except Exception as e:
                     logging.warning(f"Gagal mengklik Next: {e}")
                     continue
             
-            # Mencari tombol 'Finish' atau 'Selesai' di akhir rangkaian pop-up
             try:
                 finish_button = WebDriverWait(driver, 10).until(
                     EC.element_to_be_clickable((By.XPATH, "//*[contains(text(),'Finish')] | //*[contains(text(),'Selesai')]"))
                 )
                 finish_button.click()
                 logging.info("🏁 Klik Finish/Selesai.")
-                # Tunggu hingga pop-up benar-benar hilang
                 WebDriverWait(driver, 10).until(
                     EC.invisibility_of_element_located((By.XPATH, "//*[contains(text(),'Finish')] | //*[contains(text(),'Selesai')]"))
                 )
@@ -130,7 +126,6 @@ def main():
 
         # Menunggu tombol presensi utama muncul dan dapat diklik
         logging.info("⏳ Menunggu tombol presensi utama...")
-        # Perbarui XPATH untuk mencari tombol presensi utama
         presensi_button = WebDriverWait(driver, 30).until(
             EC.element_to_be_clickable((By.XPATH, "//a[contains(@class, 'btn-presensi')]"))
         )
@@ -138,10 +133,9 @@ def main():
         logging.info("✅ Tombol presensi utama ditemukan.")
         presensi_button.click()
         logging.info("✅ Klik: Tombol Presensi Utama.")
-        time.sleep(5)  # Beri waktu untuk halaman presensi dimuat
+        time.sleep(5)
 
         # Cek apakah presensi berhasil
-        # Cari elemen yang menunjukkan status sukses, misalnya "Presensi berhasil" atau "Anda telah melakukan presensi"
         try:
             success_message = WebDriverWait(driver, 10).until(
                 EC.visibility_of_element_located((By.XPATH, "//*[contains(text(), 'Presensi berhasil')] | //*[contains(text(), 'Anda telah melakukan presensi')]"))
