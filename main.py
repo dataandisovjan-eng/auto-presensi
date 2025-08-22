@@ -45,6 +45,31 @@ def setup_driver():
         logging.error(f"❌ Gagal mengatur driver: {e}")
         return None
 
+def find_element_with_retries(driver, by, value, timeout=30):
+    """
+    Mencari elemen dengan strategi yang lebih tangguh.
+    Jika gagal, akan mencoba beberapa alternatif.
+    """
+    strategies = [
+        (by, value),
+        (By.ID, "username") if value == "username" else (By.ID, "password"),
+        (By.NAME, "username") if value == "username" else (By.NAME, "password"),
+        (By.XPATH, f"//input[@id='{value}'] | //input[@name='{value}'] | //input[@placeholder='{value}']")
+    ]
+    
+    for strategy in strategies:
+        try:
+            logging.info(f"    - Mencoba strategi: {strategy[0].upper()}='{strategy[1]}'")
+            element = WebDriverWait(driver, timeout).until(
+                EC.element_to_be_clickable(strategy)
+            )
+            return element
+        except TimeoutException:
+            continue
+    
+    # Jika semua strategi gagal
+    raise TimeoutException(f"Gagal menemukan elemen: '{value}' setelah mencoba semua strategi.")
+
 def main():
     """Fungsi utama untuk menjalankan skrip presensi."""
     # Definisikan kredensial
@@ -82,30 +107,13 @@ def main():
             logging.info("Tidak ada iframe ditemukan. Lanjut mencari elemen di halaman utama.")
 
         # Logika pencarian yang lebih tangguh dan bertahap untuk field username
-        username_input = None
-        password_input = None
+        logging.info("🔎 Mencari field username...")
+        username_input = find_element_with_retries(driver, By.ID, "username")
+        logging.info("✅ Field username ditemukan.")
 
-        try:
-            logging.info("🔎 Mencari field username...")
-            # Coba mencari dengan XPATH yang paling umum dan fleksibel
-            username_input = WebDriverWait(driver, 60).until(
-                EC.element_to_be_clickable((By.XPATH, "//input[@id='username' or @name='username' or @name='npk' or @placeholder='Username' or contains(@id, 'user')]"))
-            )
-            logging.info("✅ Field username ditemukan.")
-        except TimeoutException:
-            logging.error("❌ Timeout: Gagal menemukan field username dalam waktu yang ditentukan.")
-            raise
-
-        try:
-            logging.info("🔎 Mencari field password...")
-            # Coba mencari dengan XPATH yang paling umum dan fleksibel
-            password_input = WebDriverWait(driver, 60).until(
-                EC.element_to_be_clickable((By.XPATH, "//input[@id='password' or @name='password' or @placeholder='Password' or contains(@id, 'pass')]"))
-            )
-            logging.info("✅ Field password ditemukan.")
-        except TimeoutException:
-            logging.error("❌ Timeout: Gagal menemukan field password dalam waktu yang ditentukan.")
-            raise
+        logging.info("🔎 Mencari field password...")
+        password_input = find_element_with_retries(driver, By.ID, "password")
+        logging.info("✅ Field password ditemukan.")
 
         # Input username dan password jika elemen ditemukan
         if username_input and password_input:
