@@ -5,7 +5,6 @@ import logging
 from selenium import webdriver
 from selenium.webdriver.chrome.service import Service as ChromeService
 from selenium.webdriver.common.by import By
-from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException, NoSuchElementException, WebDriverException
@@ -116,7 +115,7 @@ def main():
         driver.switch_to.default_content()
         logging.info("✅ Kembali ke konten utama.")
 
-        # Logika penanganan pop-up yang lebih tangguh
+        # Logika penanganan pop-up yang lebih tangguh berdasarkan gambar yang Anda berikan
         logging.info("🔎 Mencari pop-up untuk ditutup...")
         try:
             wait_for_popup = WebDriverWait(driver, 15)
@@ -124,7 +123,9 @@ def main():
             # Coba klik tombol "Next" berulang kali sampai tidak ada lagi
             while True:
                 try:
-                    next_button = wait_for_popup.until(EC.element_to_be_clickable((By.XPATH, "//*[contains(text(),'Next') or contains(text(),'next')]")))
+                    # Mencari tombol Next dengan XPath yang lebih luas berdasarkan teks dan atribut
+                    # Perhatikan adanya tag <i> dengan class 'fa fa-arrow-right'
+                    next_button = wait_for_popup.until(EC.element_to_be_clickable((By.XPATH, "//*[contains(text(),'Next') or contains(text(),'next') or contains(@class, 'btn-next') or contains(@class, 'next-button') or contains(@id, 'next-btn') or contains(@id, 'next-button') or contains(text(),'Selanjutnya') or .//i[contains(@class, 'fa-arrow-right')]]")))
                     next_button.click()
                     next_clicked_count += 1
                     logging.info(f"⏭️ Klik Next (total: {next_clicked_count})")
@@ -134,7 +135,8 @@ def main():
                     break # Keluar dari loop jika tidak ada tombol Next
             
             # Coba klik tombol "Finish"
-            finish_button = wait_for_popup.until(EC.element_to_be_clickable((By.XPATH, "//*[contains(text(),'Finish') or contains(text(),'Selesai') or contains(text(),'finish')]")))
+            # Perhatikan adanya tag <i> dengan class 'fa fa-flag-checkered'
+            finish_button = wait_for_popup.until(EC.element_to_be_clickable((By.XPATH, "//*[contains(text(),'Finish') or contains(text(),'Selesai') or contains(text(),'finish') or contains(@class, 'btn-finish') or contains(@class, 'finish-button') or contains(@id, 'finish-btn') or contains(@id, 'finish-button') or .//i[contains(@class, 'fa-flag-checkered')]]")))
             finish_button.click()
             logging.info("🏁 Klik Finish/Selesai.")
             logging.info("✅ Pop-up berhasil ditutup.")
@@ -146,7 +148,7 @@ def main():
         # Menunggu tombol presensi utama muncul dan dapat diklik
         logging.info("⏳ Menunggu tombol presensi utama...")
         presensi_button = WebDriverWait(driver, 30).until(
-            EC.element_to_be_clickable((By.XPATH, "//a[contains(@class, 'btn-presensi')]"))
+            EC.element_to_be_clickable((By.XPATH, "//a[contains(@class, 'btn-presensi')] | //a[contains(@href, '/presensi')]"))
         )
         
         logging.info("✅ Tombol presensi utama ditemukan.")
