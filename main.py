@@ -38,37 +38,12 @@ def setup_driver():
         # Menggunakan Service() tanpa WebDriverManager.
         service = ChromeService()
         driver = webdriver.Chrome(service=service, options=chrome_options)
-        driver.set_page_load_timeout(60)
+        driver.set_page_load_timeout(90) # Meningkatkan page load timeout
         logging.info("✅ Driver siap.")
         return driver
     except WebDriverException as e:
         logging.error(f"❌ Gagal mengatur driver: {e}")
         return None
-
-def find_element_with_retries(driver, by, value, timeout=30):
-    """
-    Mencari elemen dengan strategi yang lebih tangguh.
-    Jika gagal, akan mencoba beberapa alternatif.
-    """
-    strategies = [
-        (by, value),
-        (By.ID, "username") if value == "username" else (By.ID, "password"),
-        (By.NAME, "username") if value == "username" else (By.NAME, "password"),
-        (By.XPATH, f"//input[@id='{value}'] | //input[@name='{value}'] | //input[@placeholder='{value}']")
-    ]
-    
-    for strategy in strategies:
-        try:
-            logging.info(f"    - Mencoba strategi: {strategy[0].upper()}='{strategy[1]}'")
-            element = WebDriverWait(driver, timeout).until(
-                EC.element_to_be_clickable(strategy)
-            )
-            return element
-        except TimeoutException:
-            continue
-    
-    # Jika semua strategi gagal
-    raise TimeoutException(f"Gagal menemukan elemen: '{value}' setelah mencoba semua strategi.")
 
 def main():
     """Fungsi utama untuk menjalankan skrip presensi."""
@@ -98,22 +73,75 @@ def main():
         # Mencari iframe dan beralih ke dalamnya jika ditemukan
         try:
             logging.info("🔎 Mencari iframe...")
-            iframe = WebDriverWait(driver, 10).until(
+            iframe = WebDriverWait(driver, 15).until(
                 EC.presence_of_element_located((By.TAG_NAME, "iframe"))
             )
             driver.switch_to.frame(iframe)
             logging.info("✅ Berhasil beralih ke iframe.")
+            logging.info(f"   - URL di dalam iframe: {driver.current_url}")
         except TimeoutException:
             logging.info("Tidak ada iframe ditemukan. Lanjut mencari elemen di halaman utama.")
 
         # Logika pencarian yang lebih tangguh dan bertahap untuk field username
-        logging.info("🔎 Mencari field username...")
-        username_input = find_element_with_retries(driver, By.ID, "username")
-        logging.info("✅ Field username ditemukan.")
+        username_input = None
+        password_input = None
+        wait = WebDriverWait(driver, 90) # Waktu tunggu yang lebih lama untuk elemen login
 
-        logging.info("🔎 Mencari field password...")
-        password_input = find_element_with_retries(driver, By.ID, "password")
-        logging.info("✅ Field password ditemukan.")
+        try:
+            logging.info("🔎 Mencari field username...")
+            # Daftar strategi pencarian yang akan dicoba secara berurutan
+            strategies = [
+                (By.ID, "username"),
+                (By.NAME, "username"),
+                (By.XPATH, "//input[@placeholder='Username']"),
+                (By.XPATH, "//input[contains(@id, 'user') or contains(@name, 'user')]"),
+                (By.CSS_SELECTOR, "input[id*='user']"),
+                (By.CSS_SELECTOR, "input[name*='user']")
+            ]
+
+            for by, value in strategies:
+                try:
+                    logging.info(f"    - Mencoba strategi: {by.upper()}='{value}'")
+                    username_input = wait.until(EC.element_to_be_clickable((by, value)))
+                    logging.info("✅ Field username ditemukan.")
+                    break
+                except TimeoutException:
+                    continue
+            
+            if not username_input:
+                raise TimeoutException("Gagal menemukan field username setelah mencoba semua strategi.")
+
+        except TimeoutException as e:
+            logging.error(f"❌ Timeout: Gagal menemukan field username dalam waktu yang ditentukan.")
+            raise e
+
+        try:
+            logging.info("🔎 Mencari field password...")
+            # Daftar strategi pencarian yang akan dicoba secara berurutan
+            strategies = [
+                (By.ID, "password"),
+                (By.NAME, "password"),
+                (By.XPATH, "//input[@placeholder='Password']"),
+                (By.XPATH, "//input[contains(@id, 'pass') or contains(@name, 'pass')]"),
+                (By.CSS_SELECTOR, "input[id*='pass']"),
+                (By.CSS_SELECTOR, "input[name*='pass']")
+            ]
+
+            for by, value in strategies:
+                try:
+                    logging.info(f"    - Mencoba strategi: {by.upper()}='{value}'")
+                    password_input = wait.until(EC.element_to_be_clickable((by, value)))
+                    logging.info("✅ Field password ditemukan.")
+                    break
+                except TimeoutException:
+                    continue
+
+            if not password_input:
+                raise TimeoutException("Gagal menemukan field password setelah mencoba semua strategi.")
+
+        except TimeoutException as e:
+            logging.error(f"❌ Timeout: Gagal menemukan field password dalam waktu yang ditentukan.")
+            raise e
 
         # Input username dan password jika elemen ditemukan
         if username_input and password_input:
@@ -123,7 +151,7 @@ def main():
             # Mencari tombol login
             logging.info("🔎 Mencari tombol login...")
             login_button = WebDriverWait(driver, 10).until(
-                EC.element_to_be_clickable((By.XPATH, "//button[contains(text(), 'Login')] | //button[contains(text(), 'Masuk')] | //input[@type='submit' or @type='button']"))
+                EC.element_to_be_clickable((By.XPATH, "//button[contains(text(), 'Login') or contains(text(), 'Masuk')] | //input[@type='submit' or @type='button']"))
             )
             login_button.click()
             logging.info("✅ Klik tombol login.")
@@ -136,32 +164,30 @@ def main():
 
         # Mencari dan menutup semua pop-up yang mungkin muncul
         logging.info("🔎 Mencari dan menutup pop-up...")
-        popup_next_buttons = driver.find_elements(By.XPATH, "//*[contains(text(),'Next')]")
-        if popup_next_buttons:
-            logging.info("Pop-up 'Next' ditemukan. Memproses...")
-            for btn in popup_next_buttons:
+        try:
+            wait_for_popup = WebDriverWait(driver, 10)
+            next_button_xpath = "//*[contains(text(),'Next') or contains(text(),'next')]"
+            finish_button_xpath = "//*[contains(text(),'Finish') or contains(text(),'Selesai') or contains(text(),'finish')]"
+            
+            # Cek apakah ada tombol 'Next' atau 'Finish'
+            while True:
                 try:
-                    btn.click()
+                    next_button = wait_for_popup.until(EC.element_to_be_clickable((By.XPATH, next_button_xpath)))
+                    next_button.click()
                     logging.info("⏭️ Klik Next")
                     time.sleep(2)
-                except Exception as e:
-                    logging.warning(f"Gagal mengklik Next: {e}")
-                    continue
+                except TimeoutException:
+                    break # Keluar dari loop jika tidak ada tombol Next lagi
             
-            try:
-                finish_button = WebDriverWait(driver, 10).until(
-                    EC.element_to_be_clickable((By.XPATH, "//*[contains(text(),'Finish')] | //*[contains(text(),'Selesai')]"))
-                )
-                finish_button.click()
-                logging.info("🏁 Klik Finish/Selesai.")
-                WebDriverWait(driver, 10).until(
-                    EC.invisibility_of_element_located((By.XPATH, "//*[contains(text(),'Finish')] | //*[contains(text(),'Selesai')]"))
-                )
-                logging.info("Pop-up berhasil ditutup.")
-            except TimeoutException:
-                logging.warning("Pop-up finish tidak muncul atau tidak dapat diklik dalam waktu yang ditentukan.")
-        else:
+            # Coba klik tombol Finish setelah semua Next di-klik
+            finish_button = wait_for_popup.until(EC.element_to_be_clickable((By.XPATH, finish_button_xpath)))
+            finish_button.click()
+            logging.info("🏁 Klik Finish/Selesai.")
+            logging.info("Pop-up berhasil ditutup.")
+        except TimeoutException:
             logging.info("Tidak ada pop-up yang ditemukan.")
+        except Exception as e:
+            logging.warning(f"Gagal menutup pop-up: {e}")
 
         # Menunggu tombol presensi utama muncul dan dapat diklik
         logging.info("⏳ Menunggu tombol presensi utama...")
@@ -177,14 +203,14 @@ def main():
         # Cek apakah presensi berhasil
         try:
             success_message = WebDriverWait(driver, 10).until(
-                EC.visibility_of_element_located((By.XPATH, "//*[contains(text(), 'Presensi berhasil')] | //*[contains(text(), 'Anda telah melakukan presensi')]"))
+                EC.visibility_of_element_located((By.XPATH, "//*[contains(text(), 'Presensi berhasil') or contains(text(), 'Anda telah melakukan presensi')]"))
             )
             logging.info("🎉 Presensi berhasil!")
         except TimeoutException:
             logging.warning("⚠️ Pesan konfirmasi presensi tidak ditemukan. Mungkin presensi gagal atau pesan berbeda.")
 
-    except TimeoutException:
-        logging.error("❌ Timeout: Elemen tidak ditemukan dalam waktu yang ditentukan.")
+    except TimeoutException as e:
+        logging.error(f"❌ Timeout: Elemen tidak ditemukan dalam waktu yang ditentukan.")
     except NoSuchElementException as e:
         logging.error(f"❌ Elemen tidak ditemukan: {e}")
     except Exception as e:
