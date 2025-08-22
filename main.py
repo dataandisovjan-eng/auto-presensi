@@ -211,29 +211,32 @@ def login(driver, user):
     wait_dom_ready(driver)
     logging.info(f"[{user['name']}] ✅ Form login tersubmit")
 
-def is_presensi_success_final(driver, user, mode):
+def is_presensi_success(driver, user, mode):
     """
     Memverifikasi keberhasilan presensi dengan mencari indikator yang lebih fleksibel.
+    - Cek status check-in/check-out di halaman
+    - Cek tombol utama apakah sudah tidak aktif
     """
-    logging.info(f"[{user['name']}] ⏳ Memverifikasi status presensi dengan indikator yang lebih fleksibel...")
-    
-    # Cari teks yang mengindikasikan keberhasilan
-    success_keywords = ["berhasil", "sukses", "successfully", "check out", "sudah check out", "sudah check in", "presensi berhasil"]
+    logging.info(f"[{user['name']}] ⏳ Memverifikasi status presensi...")
     
     # Tunggu 30 detik untuk memberikan waktu bagi status berubah
     for _ in range(30):
         try:
-            body_text = driver.find_element(By.TAG_NAME, "body").text.lower()
+            # Cari elemen yang menampilkan status check-in dan check-out
+            check_in_status_el = driver.find_element(By.XPATH, "//div[contains(text(), 'Sudah Check In')]")
+            check_out_status_el = driver.find_element(By.XPATH, "//div[contains(text(), 'Sudah Check Out')]")
             
-            # Cek apakah salah satu kata kunci keberhasilan ada di halaman
-            for keyword in success_keywords:
-                if keyword in body_text:
-                    logging.info(f"[{user['name']}] ✅ Teks '{keyword}' ditemukan. Presensi berhasil!")
-                    return True
+            if mode == "check_in" and "Sudah Check In" in check_in_status_el.text:
+                logging.info(f"[{user['name']}] ✅ Status 'Sudah Check In' ditemukan. Presensi berhasil!")
+                return True
+            
+            if mode == "check_out" and "Sudah Check Out" in check_out_status_el.text:
+                logging.info(f"[{user['name']}] ✅ Status 'Sudah Check Out' ditemukan. Presensi berhasil!")
+                return True
 
-            # Opsi alternatif: Cari tombol presensi utama dan cek apakah dia sudah tidak aktif
+            # Alternatif: Periksa tombol presensi utama
             btn_presensi_utama = driver.find_element(By.XPATH, ci_xpath_contains("klik disini untuk presensi"))
-            if "disabled" in btn_presensi_utama.get_attribute("class").lower() or "opacity-50" in btn_presensi_utama.get_attribute("class").lower():
+            if "disabled" in btn_presensi_utama.get_attribute("class").lower():
                 logging.info(f"[{user['name']}] ✅ Tombol presensi utama sudah tidak aktif. Presensi berhasil!")
                 return True
 
@@ -260,7 +263,7 @@ def lakukan_presensi(driver, user, mode="check_in"):
     time.sleep(3.0) # Tambahan jeda untuk memastikan DOM stabil
 
     # Tunggu tombol utama ("klik disini untuk presensi") muncul dan bisa diklik
-    logging.info(f"[{user['name']}] ⏳ Menunggu tombol presensi...")
+    logging.info(f"[{user['name']}] ⏳ Menunggu tombol presensi utama...")
     btn_xpath = ci_xpath_contains("klik disini untuk presensi")
     
     try:
@@ -276,31 +279,38 @@ def lakukan_presensi(driver, user, mode="check_in"):
         logging.info(f"[{user['name']}] ✅ Tombol presensi tidak dapat diklik, menganggap presensi sudah dilakukan.")
         return True
 
-    # Tambahkan jeda untuk memastikan pop-up konfirmasi muncul
-    time.sleep(3.5)
-
-    # Mencari pop-up lagi, kali ini lebih agresif
-    logging.info(f"[{user['name']}] 🔎 Mencari pop-up tambahan setelah klik pertama...")
-    close_guided_popups(driver, user, max_attempts=10)
-
-    # Mencari dan klik tombol konfirmasi di dalam popup yang mungkin muncul
-    confirm_btn_xpath = "//*[(self::button or self::a or self::div or self::span) and (contains(text(), 'OK') or contains(text(), 'Ya') or contains(text(), 'Konfirmasi') or contains(text(), 'Submit'))]"
+    # Tunggu pop-up modal
     try:
-        confirm_button = WebDriverWait(driver, 5).until(EC.element_to_be_clickable((By.XPATH, confirm_btn_xpath)))
+        modal_form = WebDriverWait(driver, 10).until(
+            EC.visibility_of_element_located((By.ID, "modal-form"))
+        )
+        logging.info(f"[{user['name']}] ✅ Pop-up modal presensi ditemukan.")
+    except TimeoutException:
+        raise RuntimeError("Pop-up modal presensi tidak muncul setelah mengklik tombol.")
+
+    # Mencari dan klik tombol konfirmasi di dalam popup
+    confirm_btn_xpath = "//div[@id='modal-form']//*[contains(text(), 'OK') or contains(text(), 'Ya') or contains(text(), 'Konfirmasi') or contains(text(), 'Submit')]"
+    try:
+        confirm_button = WebDriverWait(modal_form, 10).until(
+            EC.element_to_be_clickable((By.XPATH, confirm_btn_xpath))
+        )
         logging.info(f"[{user['name']}] ✅ Tombol konfirmasi di pop-up ditemukan. Mencoba mengklik...")
         scroll_into_view(driver, confirm_button)
         confirm_button.click()
         logging.info(f"[{user['name']}] ✅ Klik: Tombol Konfirmasi (Popup)")
     except TimeoutException:
-        logging.info(f"[{user['name']}] ⏭️ Tidak ada tombol konfirmasi pop-up tambahan yang ditemukan. Lanjut.")
+        logging.warning(f"[{user['name']}] ⚠️ Tombol konfirmasi di pop-up tidak ditemukan.")
     except Exception as e:
         logging.warning(f"⚠️ Gagal klik tombol konfirmasi pop-up: {e}")
     
     # Tambahkan jeda setelah klik konfirmasi
     time.sleep(5.0)
-
+    
+    # Cek pop-up tambahan setelah konfirmasi (untuk jaga-jaga)
+    close_guided_popups(driver, user, max_attempts=5)
+    
     # Verifikasi status akhir
-    if not is_presensi_success_final(driver, user, mode):
+    if not is_presensi_success(driver, user, mode):
         raise RuntimeError("Verifikasi status presensi gagal.")
         
     time.sleep(6.0) # Jeda lebih lama untuk proses presensi
