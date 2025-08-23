@@ -1,144 +1,94 @@
 import os
-import sys
 import time
-import shutil
 import logging
 from datetime import datetime
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
-from selenium.common.exceptions import TimeoutException, NoSuchElementException, ElementClickInterceptedException
+from selenium.common.exceptions import TimeoutException
 
-# ========== SETUP LOGGING ==========
-timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-log_filename = f"run_log_{timestamp}.log"
-os.makedirs("logs", exist_ok=True)
+# Logging setup
 logging.basicConfig(
-    filename=os.path.join("logs", log_filename),
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s",
-    datefmt="%Y-%m-%d %H:%M:%S"
+    datefmt="%Y-%m-%d %H:%M:%S",
 )
-console = logging.StreamHandler(sys.stdout)
-console.setLevel(logging.INFO)
-formatter = logging.Formatter("%(asctime)s [%(levelname)s] %(message)s", "%H:%M:%S")
-console.setFormatter(formatter)
-logging.getLogger().addHandler(console)
 
-# ========== SETUP ARTIFACTS FOLDER ==========
-ARTIFACT_DIR = "artifacts"
-SCREENSHOT_DIR = "screenshots"
-os.makedirs(ARTIFACT_DIR, exist_ok=True)
-os.makedirs(SCREENSHOT_DIR, exist_ok=True)
+def get_credentials():
+    """Ambil username & password dari GitHub Secrets"""
+    username = os.getenv("USER1") or os.getenv("USER1_USERNAME")
+    password = os.getenv("PASS1") or os.getenv("USER1_PASSWORD")
 
-def save_screenshot(driver, name: str):
-    """Simpan screenshot ke folder screenshots/"""
-    path = os.path.join(SCREENSHOT_DIR, f"{name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png")
-    driver.save_screenshot(path)
-    logging.info(f"📸 Screenshot disimpan: {path}")
-    return path
+    if not username or not password:
+        logging.error("❌ Username/Password tidak ditemukan di secrets!")
+        raise SystemExit(1)
 
-def move_to_artifacts():
-    """Pindahkan semua logs & screenshots ke artifacts/"""
-    for folder in [SCREENSHOT_DIR, "logs"]:
-        if os.path.exists(folder):
-            for f in os.listdir(folder):
-                src = os.path.join(folder, f)
-                dst = os.path.join(ARTIFACT_DIR, f)
-                try:
-                    shutil.copy(src, dst)
-                except Exception as e:
-                    logging.warning(f"⚠️ Gagal copy {src} → {dst}: {e}")
-    logging.info("📦 Semua hasil dipindahkan ke artifacts/")
+    logging.info("✅ Kredensial ditemukan. Mencoba login sebagai: ***")
+    return username, password
 
-# ========== START SELENIUM ==========
-def run_presensi(username, password):
-    logging.info("✅ Kredensial ditemukan. Mencoba login...")
+def run_presensi():
+    username, password = get_credentials()
 
+    logging.info("⚙️ Mengatur driver...")
     options = webdriver.ChromeOptions()
     options.add_argument("--headless=new")
-    options.add_argument("--disable-gpu")
+    options.add_argument("--no-sandbox")
+    options.add_argument("--disable-dev-shm-usage")
     driver = webdriver.Chrome(options=options)
 
     try:
-        # Buka login
         logging.info("🌐 Buka halaman login...")
-        driver.get("https://dani.perhutani.co.id/login")
+        driver.get("https://dani.perhutani.co.id/")
 
-        # Isi username & password
-        WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.ID, "username"))).send_keys(username)
-        WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.ID, "password"))).send_keys(password)
+        # Login step
+        WebDriverWait(driver, 10).until(
+            EC.presence_of_element_located((By.NAME, "npk"))
+        ).send_keys(username)
 
-        # Klik login
-        login_btn = WebDriverWait(driver, 10).until(EC.element_to_be_clickable((By.CSS_SELECTOR, "button[type='submit']")))
-        login_btn.click()
+        driver.find_element(By.NAME, "password").send_keys(password)
+
+        btn_login = driver.find_element(By.XPATH, "//button[@type='submit']")
+        btn_login.click()
         logging.info("✅ Klik tombol login.")
 
-        # Tunggu masuk dashboard
-        time.sleep(5)
-
-        # Tutup popup (kalau ada)
+        # Tunggu popup / announcement
         logging.info("🔎 Mencari pop-up untuk ditutup...")
+        time.sleep(5)
         try:
-            finish_btn = WebDriverWait(driver, 5).until(
-                EC.element_to_be_clickable((By.XPATH, "//button[contains(text(),'Finish')]"))
-            )
-            finish_btn.click()
-            logging.info("✅ Klik tombol Finish.")
-        except TimeoutException:
-            logging.info("⚠️ Tidak menemukan tombol Finish, lanjut.")
-            # Hapus modal dengan JS kalau menghalangi
-            try:
-                driver.execute_script("document.querySelectorAll('.modal.show').forEach(m => m.remove());")
-                logging.info("❎ Modal dihapus pakai JS.")
-            except Exception:
-                pass
+            driver.execute_script("""
+                let modal = document.querySelector('#announcement');
+                if (modal) { modal.remove(); }
+            """)
+            logging.info("❎ Modal dihapus pakai JS.")
+        except Exception:
+            logging.info("⚠️ Tidak menemukan modal.")
 
-        # Klik tombol presensi utama
+        # Tunggu tombol presensi
         logging.info("⏳ Menunggu tombol presensi utama...")
-        presensi_btn = WebDriverWait(driver, 15).until(
-            EC.element_to_be_clickable((By.XPATH, "//a[contains(@href,'presensi')]"))
+        btn_presensi = WebDriverWait(driver, 15).until(
+            EC.element_to_be_clickable((By.XPATH, "//a[contains(@href,'/presensi')]"))
         )
-        presensi_btn.click()
+        btn_presensi.click()
         logging.info("✅ Klik: Tombol Presensi Utama.")
 
-        # Cari notifikasi konfirmasi presensi
-        notif = None
-        possible_selectors = [
-            ".swal2-popup", ".swal2-container",  # SweetAlert2
-            ".toast-message", ".toast",          # Toast notification
-            ".alert", ".alert-success"           # Bootstrap alerts
-        ]
-        for sel in possible_selectors:
-            try:
-                notif = WebDriverWait(driver, 5).until(
-                    EC.presence_of_element_located((By.CSS_SELECTOR, sel))
-                )
-                break
-            except TimeoutException:
-                continue
-
-        if notif:
-            logging.info(f"✅ Notifikasi presensi ditemukan: {notif.text}")
-        else:
+        # Konfirmasi presensi
+        try:
+            notif = WebDriverWait(driver, 10).until(
+                EC.presence_of_element_located((By.CLASS_NAME, "swal2-title"))
+            )
+            logging.info(f"✅ Presensi berhasil: {notif.text}")
+        except TimeoutException:
             logging.warning("⚠️ Pesan konfirmasi presensi tidak ditemukan.")
-            save_screenshot(driver, "presensi_notif_missing")
+            filename = f"presensi_notif_missing_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png"
+            driver.save_screenshot(filename)
+            logging.info(f"📸 Screenshot disimpan: {filename}")
 
     except Exception as e:
         logging.error(f"❌ Terjadi kesalahan: {e}")
-        save_screenshot(driver, "error")
     finally:
-        driver.quit()
         logging.info("🚪 Keluar dari browser.")
-        move_to_artifacts()
+        driver.quit()
 
-# ========== MAIN ==========
 if __name__ == "__main__":
-    USERNAME = os.getenv("USER1")
-    PASSWORD = os.getenv("PASS1")
-    if not USERNAME or not PASSWORD:
-        logging.error("❌ Username/Password tidak ditemukan di secrets!")
-        sys.exit(1)
-
-    run_presensi(USERNAME, PASSWORD)
+    run_presensi()
