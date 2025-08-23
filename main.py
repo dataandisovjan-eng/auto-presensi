@@ -2,12 +2,13 @@ import sys
 import os
 import time
 import logging
+from datetime import datetime
 from selenium import webdriver
 from selenium.webdriver.chrome.service import Service as ChromeService
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
-from selenium.common.exceptions import TimeoutException, NoSuchElementException, WebDriverException
+from selenium.common.exceptions import TimeoutException, WebDriverException
 
 # Konfigurasi logging
 log_filename = "presensi.log"
@@ -19,8 +20,17 @@ logging.basicConfig(level=logging.INFO,
                         logging.StreamHandler(sys.stdout)
                     ])
 
+def save_screenshot(driver, name="error_screenshot"):
+    """Simpan screenshot dengan timestamp"""
+    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+    filename = f"{name}_{ts}.png"
+    try:
+        driver.save_screenshot(filename)
+        logging.info(f"📸 Screenshot disimpan: {filename}")
+    except Exception as e:
+        logging.error(f"❌ Gagal menyimpan screenshot: {e}")
+
 def setup_driver():
-    """Inisialisasi WebDriver Chrome"""
     logging.info("⚙️ Mengatur driver...")
     try:
         chrome_options = webdriver.ChromeOptions()
@@ -41,8 +51,24 @@ def setup_driver():
         logging.error(f"❌ Gagal mengatur driver: {e}")
         return None
 
+def close_all_popups(driver):
+    """Menutup semua popup/modal yang menghalangi klik"""
+    logging.info("🛑 Periksa modal/pop-up aktif...")
+    try:
+        modals = driver.find_elements(By.XPATH, "//div[contains(@class,'modal') and contains(@class,'show')]")
+        for modal in modals:
+            try:
+                close_btn = modal.find_element(By.XPATH, ".//button[contains(@class,'close') or @data-dismiss='modal']")
+                close_btn.click()
+                logging.info("❎ Modal ditutup dengan tombol X.")
+                time.sleep(1)
+            except:
+                driver.execute_script("arguments[0].remove();", modal)
+                logging.info("❎ Modal dihapus pakai JS.")
+    except Exception as e:
+        logging.warning(f"⚠️ Tidak ada modal yang perlu ditutup: {e}")
+
 def main():
-    """Fungsi utama"""
     username = os.environ.get('USER1_USERNAME')
     password = os.environ.get('USER1_PASSWORD')
     url_login = "https://dani.perhutani.co.id/login"
@@ -61,25 +87,15 @@ def main():
         driver.get(url_login)
         wait = WebDriverWait(driver, 30)
 
-        # Cari field username + password
-        try:
-            logging.info("🔎 Mencari field NPK...")
-            username_input = wait.until(EC.element_to_be_clickable((By.XPATH,
-                "//input[@placeholder='NPK'] | //input[contains(@id,'user') or contains(@name,'user') or contains(@placeholder,'user')]"
-            )))
-            logging.info("✅ Field NPK ditemukan.")
-
-            password_input = driver.find_element(By.XPATH,
-                "//input[@placeholder='Password'] | //input[contains(@id,'pass') or contains(@name,'pass') or contains(@type,'password')]"
-            )
-        except TimeoutException:
-            logging.error("❌ Gagal menemukan field login.")
-            return
-
-        # Isi login
+        # Login
+        username_input = wait.until(EC.element_to_be_clickable((By.XPATH,
+            "//input[@placeholder='NPK'] | //input[contains(@id,'user') or contains(@name,'user')]"
+        )))
+        password_input = driver.find_element(By.XPATH,
+            "//input[@placeholder='Password'] | //input[@type='password']"
+        )
         username_input.send_keys(username)
         password_input.send_keys(password)
-        logging.info("🔎 Mencari tombol login...")
         login_button = wait.until(EC.element_to_be_clickable((By.XPATH,
             "//button[contains(text(),'Login') or contains(text(),'Masuk') or @type='submit']"
         )))
@@ -87,52 +103,52 @@ def main():
         logging.info("✅ Klik tombol login.")
 
         driver.switch_to.default_content()
-        logging.info("✅ Kembali ke konten utama.")
 
-        # Tangani popup tour
+        # Tutup tour popup
         logging.info("🔎 Mencari pop-up untuk ditutup...")
-        try:
-            wait_for_popup = WebDriverWait(driver, 10)
-            next_clicked_count = 0
-            max_next_clicks = 10  # Batas agar tidak infinite loop
-
-            while next_clicked_count < max_next_clicks:
-                try:
-                    next_button = wait_for_popup.until(EC.element_to_be_clickable((By.XPATH,
-                        "//*[contains(text(),'Next') or contains(text(),'Selanjutnya') or .//i[contains(@class,'fa-arrow-right')]]"
-                    )))
-                    next_button.click()
-                    next_clicked_count += 1
-                    logging.info(f"⏭️ Klik Next (total: {next_clicked_count})")
-                    time.sleep(1)
-                except TimeoutException:
-                    logging.info("Tidak ada tombol 'Next' lagi.")
-                    break
-
-            # Cari tombol Finish / Selesai
+        next_clicked_count = 0
+        max_next_clicks = 10
+        while next_clicked_count < max_next_clicks:
             try:
-                finish_button = wait_for_popup.until(EC.element_to_be_clickable((By.XPATH,
-                    "//*[contains(text(),'Finish') or contains(text(),'Selesai') or .//i[contains(@class,'fa-flag-checkered')] or contains(@class,'btn-finish')]"
+                next_button = WebDriverWait(driver, 3).until(EC.element_to_be_clickable((By.XPATH,
+                    "//*[contains(text(),'Next') or contains(text(),'Selanjutnya')]"
                 )))
-                finish_button.click()
-                logging.info("🏁 Klik Finish/Selesai.")
+                next_button.click()
+                next_clicked_count += 1
+                logging.info(f"⏭️ Klik Next (total: {next_clicked_count})")
+                time.sleep(1)
             except TimeoutException:
-                logging.info("⚠️ Tidak menemukan tombol Finish, lanjutkan tanpa menutup popup.")
+                break
+        try:
+            finish_button = WebDriverWait(driver, 3).until(EC.element_to_be_clickable((By.XPATH,
+                "//*[contains(text(),'Finish') or contains(text(),'Selesai')]"
+            )))
+            finish_button.click()
+            logging.info("🏁 Klik Finish/Selesai.")
+        except TimeoutException:
+            logging.info("⚠️ Tidak menemukan tombol Finish, lanjut.")
 
-        except Exception as e:
-            logging.warning(f"Gagal menangani popup: {e}")
+        # Tutup modal lain sebelum klik presensi
+        close_all_popups(driver)
 
-        # Cari tombol presensi
+        # Klik presensi
         logging.info("⏳ Menunggu tombol presensi utama...")
         presensi_button = WebDriverWait(driver, 30).until(
-            EC.element_to_be_clickable((By.XPATH, "//a[contains(@class,'btn-presensi')] | //a[contains(@href,'/presensi')]"))
+            EC.presence_of_element_located((By.XPATH, "//a[contains(@href,'/presensi')]"))
         )
-        logging.info("✅ Tombol presensi utama ditemukan.")
-        presensi_button.click()
-        logging.info("✅ Klik: Tombol Presensi Utama.")
-        time.sleep(5)
 
-        # Cek berhasil/tidak
+        try:
+            WebDriverWait(driver, 5).until(EC.element_to_be_clickable((By.XPATH, "//a[contains(@href,'/presensi')]")))
+            presensi_button.click()
+            logging.info("✅ Klik: Tombol Presensi Utama.")
+        except Exception as e:
+            logging.warning(f"⚠️ Gagal klik normal ({e}), coba pakai JavaScript...")
+            driver.execute_script("arguments[0].click();", presensi_button)
+            logging.info("✅ Klik tombol presensi via JavaScript.")
+
+        time.sleep(3)
+
+        # Cek berhasil
         try:
             WebDriverWait(driver, 10).until(
                 EC.visibility_of_element_located((By.XPATH,
@@ -142,9 +158,11 @@ def main():
             logging.info("🎉 Presensi berhasil!")
         except TimeoutException:
             logging.warning("⚠️ Pesan konfirmasi presensi tidak ditemukan.")
+            save_screenshot(driver, "presensi_notif_missing")
 
     except Exception as e:
         logging.error(f"❌ Terjadi kesalahan: {e}")
+        save_screenshot(driver, "fatal_error")
     finally:
         logging.info("🚪 Keluar dari browser.")
         driver.quit()
