@@ -1,9 +1,20 @@
 name: Auto Presensi
 
 on:
-  workflow_dispatch:   # Bisa dijalankan manual
-  schedule:
-    - cron: "0 0 * * *"   # Setiap hari jam 07:00 WIB (0 UTC = 07:00 WIB)
+  workflow_dispatch:   # ✅ Bisa dijalankan manual dari GitHub Actions
+    inputs:
+      user:
+        description: "Pilih user (contoh: USER1)"
+        required: false
+        default: "USER1"
+      mode:
+        description: "Pilih mode (check_in / check_out)"
+        required: false
+        default: "check_in"
+
+  schedule:            # ✅ Jalan otomatis setiap hari
+    - cron: "30 22 * * *"    # Jam 05:30 WIB → check_in
+    - cron: "5 9 * * *"      # Jam 16:05 WIB → check_out
 
 jobs:
   presensi:
@@ -23,13 +34,23 @@ jobs:
           pip install selenium webdriver-manager
 
       - name: ▶️ Jalankan presensi
+        env:
+          USER1_USERNAME: ${{ secrets.USER1_USERNAME }}
+          USER1_PASSWORD: ${{ secrets.USER1_PASSWORD }}
+          USER2_USERNAME: ${{ secrets.USER2_USERNAME }}
+          USER2_PASSWORD: ${{ secrets.USER2_PASSWORD }}
         run: |
-          python main.py
+          echo "⏰ Mulai presensi..."
+          python main.py \
+            --user "${{ github.event.inputs.user || 'USER1' }}" \
+            --mode "${{ github.event.inputs.mode || 'check_in' }}"
 
-      - name: 📤 Upload screenshot (jika ada error)
+      - name: 📤 Upload logs & screenshot
         uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: presensi-screenshots
+          name: presensi-artifacts
           path: |
+            *.log
             *.png
+            artifacts/
