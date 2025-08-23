@@ -1,28 +1,16 @@
 name: Presensi Otomatis
 
 on:
+  workflow_dispatch:   # Bisa dijalankan manual
   schedule:
-    # WIB 05:30 => UTC 22:30 (hari sebelumnya), Senin-Jumat
-    - cron: "30 22 * * 1-5"
-    # WIB 16:05 => UTC 09:05, Senin-Jumat
-    - cron: "5 9 * * 1-5"
-  workflow_dispatch:
-    inputs:
-      force_user:
-        description: "Nama user (Pak Budi, Bu Sari, all)"
-        required: false
-        default: ""
-      force_mode:
-        description: "Mode (check_in / check_out)"
-        required: false
-        default: ""
+    - cron: "0 1 * * 1-5"  # contoh: jalan tiap hari Senin - Jumat jam 08:00 WIB (1 UTC)
 
 jobs:
   presensi:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout repo
+      - name: Checkout repository
         uses: actions/checkout@v4
 
       - name: Setup Python
@@ -32,24 +20,18 @@ jobs:
 
       - name: Install dependencies
         run: |
-          pip install -r requirements.txt
+          python -m pip install --upgrade pip
+          pip install selenium
 
-      - name: Setup Chrome
-        uses: browser-actions/setup-chrome@v1
-
-      - name: Jalankan presensi
+      - name: Jalankan Presensi
         env:
-          USER1_USERNAME: ${{ secrets.USER1_USERNAME }}
-          USER1_PASSWORD: ${{ secrets.USER1_PASSWORD }}
-          USER2_USERNAME: ${{ secrets.USER2_USERNAME }}
-          USER2_PASSWORD: ${{ secrets.USER2_PASSWORD }}
-          FORCE_USER: ${{ github.event.inputs.force_user }}
-          FORCE_MODE: ${{ github.event.inputs.force_mode }}
-          GITHUB_EVENT_NAME: ${{ github.event_name }}
+          USER1: ${{ secrets.USER1 }}
+          PASS1: ${{ secrets.PASS1 }}
         run: |
-          python main.py
+          mkdir -p artifacts
+          python presensi.py
 
-      - name: Upload Log & Screenshots
+      - name: Upload Artifacts (Screenshot & Log)
         uses: actions/upload-artifact@v4
         with:
           name: presensi-artifacts
