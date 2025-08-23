@@ -9,7 +9,7 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException, NoSuchElementException, WebDriverException
 
-# Konfigurasi logging untuk mencatat aktivitas skrip ke dalam file
+# Konfigurasi logging
 log_filename = "presensi.log"
 logging.basicConfig(level=logging.INFO,
                     format='%(asctime)s [%(levelname)s] %(message)s',
@@ -20,24 +20,21 @@ logging.basicConfig(level=logging.INFO,
                     ])
 
 def setup_driver():
-    """Mengatur dan menginisialisasi WebDriver."""
+    """Inisialisasi WebDriver Chrome"""
     logging.info("⚙️ Mengatur driver...")
     try:
         chrome_options = webdriver.ChromeOptions()
-        # Nonaktifkan notifikasi pop-up browser
         chrome_options.add_experimental_option("prefs", {"profile.default_content_setting_values.notifications": 2})
-        # Tambahkan opsi untuk mode headless agar tidak membuka jendela browser
         chrome_options.add_argument("--headless")
         chrome_options.add_argument("--disable-gpu")
         chrome_options.add_argument("--no-sandbox")
         chrome_options.add_argument("--disable-dev-shm-usage")
         chrome_options.add_argument("--window-size=1920,1080")
-        chrome_options.add_argument("--log-level=3")  # Matikan logging dari browser
-        
-        # Menggunakan Service() tanpa WebDriverManager.
+        chrome_options.add_argument("--log-level=3")
+
         service = ChromeService()
         driver = webdriver.Chrome(service=service, options=chrome_options)
-        driver.set_page_load_timeout(90) # Meningkatkan page load timeout
+        driver.set_page_load_timeout(90)
         logging.info("✅ Driver siap.")
         return driver
     except WebDriverException as e:
@@ -45,22 +42,16 @@ def setup_driver():
         return None
 
 def main():
-    """Fungsi utama untuk menjalankan skrip presensi."""
-    # Definisikan kredensial
+    """Fungsi utama"""
     username = os.environ.get('USER1_USERNAME')
     password = os.environ.get('USER1_PASSWORD')
     url_login = "https://dani.perhutani.co.id/login"
 
-    # Periksa ketersediaan kredensial
     if not username or not password:
         logging.error("❌ Kredensial tidak ditemukan. Pastikan 'USER1_USERNAME' dan 'USER1_PASSWORD' sudah diatur.")
-        logging.error("➡️ CARA MEMPERBAIKI:")
-        logging.error("   1. Jika menggunakan GitHub Actions, tambahkan 'USER1_USERNAME' dan 'USER1_PASSWORD' ke Secrets repository.")
-        logging.error("   2. Jika berjalan secara lokal, atur variabel lingkungan 'USER1_USERNAME' dan 'USER1_PASSWORD' di sistem Anda.")
         return
 
     logging.info(f"✅ Kredensial ditemukan. Mencoba login sebagai: {username}")
-    
     driver = setup_driver()
     if not driver:
         return
@@ -68,113 +59,95 @@ def main():
     try:
         logging.info("🌐 Buka halaman login...")
         driver.get(url_login)
-
         wait = WebDriverWait(driver, 30)
-        username_input = None
-        password_input = None
 
-        # Logika pencarian yang lebih fleksibel, mencari elemen di halaman utama atau di dalam iframe
+        # Cari field username + password
         try:
             logging.info("🔎 Mencari field NPK...")
-            # Coba cari dengan XPath yang lebih spesifik berdasarkan placeholder "NPK"
-            username_input = wait.until(EC.element_to_be_clickable((By.XPATH, "//input[@placeholder='NPK'] | //input[contains(@id, 'user') or contains(@name, 'user') or contains(@placeholder, 'user')]")))
+            username_input = wait.until(EC.element_to_be_clickable((By.XPATH,
+                "//input[@placeholder='NPK'] | //input[contains(@id,'user') or contains(@name,'user') or contains(@placeholder,'user')]"
+            )))
             logging.info("✅ Field NPK ditemukan.")
-            
-            # Cari field password
-            password_input = driver.find_element(By.XPATH, "//input[@placeholder='Password'] | //input[contains(@id, 'pass') or contains(@name, 'pass') or contains(@placeholder, 'pass') or contains(@type, 'password')]")
 
+            password_input = driver.find_element(By.XPATH,
+                "//input[@placeholder='Password'] | //input[contains(@id,'pass') or contains(@name,'pass') or contains(@type,'password')]"
+            )
         except TimeoutException:
-            logging.info("❌ Field NPK tidak ditemukan di halaman utama. Mencoba mencari di dalam iframe...")
-            try:
-                iframe = wait.until(EC.presence_of_element_located((By.TAG_NAME, "iframe")))
-                driver.switch_to.frame(iframe)
-                logging.info("✅ Berhasil beralih ke iframe.")
-                
-                # Coba cari di dalam iframe
-                username_input = wait.until(EC.element_to_be_clickable((By.XPATH, "//input[@placeholder='NPK'] | //input[contains(@id, 'user') or contains(@name, 'user') or contains(@placeholder, 'user')]")))
-                logging.info("✅ Field NPK ditemukan di dalam iframe.")
+            logging.error("❌ Gagal menemukan field login.")
+            return
 
-                # Cari field password
-                password_input = driver.find_element(By.XPATH, "//input[@placeholder='Password'] | //input[contains(@id, 'pass') or contains(@name, 'pass') or contains(@placeholder, 'pass') or contains(@type, 'password')]")
+        # Isi login
+        username_input.send_keys(username)
+        password_input.send_keys(password)
+        logging.info("🔎 Mencari tombol login...")
+        login_button = wait.until(EC.element_to_be_clickable((By.XPATH,
+            "//button[contains(text(),'Login') or contains(text(),'Masuk') or @type='submit']"
+        )))
+        login_button.click()
+        logging.info("✅ Klik tombol login.")
 
-            except TimeoutException:
-                logging.error("❌ Gagal menemukan iframe atau field NPK/Password di dalamnya.")
-                raise # Lempar kembali exception jika gagal di kedua tempat
-
-        # Isi form dan klik login
-        if username_input and password_input:
-            username_input.send_keys(username)
-            password_input.send_keys(password)
-            
-            logging.info("🔎 Mencari tombol login...")
-            login_button = wait.until(EC.element_to_be_clickable((By.XPATH, "//button[contains(text(), 'Login') or contains(text(), 'Masuk') or @type='submit']")))
-            login_button.click()
-            logging.info("✅ Klik tombol login.")
-
-        # Pindah kembali ke konten utama setelah login
         driver.switch_to.default_content()
         logging.info("✅ Kembali ke konten utama.")
 
-        # Logika penanganan pop-up yang lebih tangguh berdasarkan gambar yang Anda berikan
+        # Tangani popup tour
         logging.info("🔎 Mencari pop-up untuk ditutup...")
         try:
-            wait_for_popup = WebDriverWait(driver, 15)
+            wait_for_popup = WebDriverWait(driver, 10)
             next_clicked_count = 0
-            # Coba klik tombol "Next" berulang kali sampai tidak ada lagi
-            while True:
+            max_next_clicks = 10  # Batas agar tidak infinite loop
+
+            while next_clicked_count < max_next_clicks:
                 try:
-                    # Mencari tombol Next dengan XPath yang lebih luas berdasarkan teks dan atribut
-                    # Perhatikan adanya tag <i> dengan class 'fa fa-arrow-right'
-                    next_button = wait_for_popup.until(EC.element_to_be_clickable((By.XPATH, "//*[contains(text(),'Next') or contains(text(),'next') or contains(@class, 'btn-next') or contains(@class, 'next-button') or contains(@id, 'next-btn') or contains(@id, 'next-button') or contains(text(),'Selanjutnya') or .//i[contains(@class, 'fa-arrow-right')]]")))
+                    next_button = wait_for_popup.until(EC.element_to_be_clickable((By.XPATH,
+                        "//*[contains(text(),'Next') or contains(text(),'Selanjutnya') or .//i[contains(@class,'fa-arrow-right')]]"
+                    )))
                     next_button.click()
                     next_clicked_count += 1
                     logging.info(f"⏭️ Klik Next (total: {next_clicked_count})")
-                    time.sleep(1) # Tunggu sebentar agar pop-up baru muncul
+                    time.sleep(1)
                 except TimeoutException:
-                    logging.info("Tidak ada tombol 'Next' lagi. Lanjut ke 'Finish'.")
-                    break # Keluar dari loop jika tidak ada tombol Next
-            
-            # Coba klik tombol "Finish"
-            # Perhatikan adanya tag <i> dengan class 'fa fa-flag-checkered'
-            finish_button = wait_for_popup.until(EC.element_to_be_clickable((By.XPATH, "//*[contains(text(),'Finish') or contains(text(),'Selesai') or contains(text(),'finish') or contains(@class, 'btn-finish') or contains(@class, 'finish-button') or contains(@id, 'finish-btn') or contains(@id, 'finish-button') or .//i[contains(@class, 'fa-flag-checkered')]]")))
-            finish_button.click()
-            logging.info("🏁 Klik Finish/Selesai.")
-            logging.info("✅ Pop-up berhasil ditutup.")
-        except TimeoutException:
-            logging.info("Tidak ada pop-up yang ditemukan.")
-        except Exception as e:
-            logging.warning(f"Gagal menutup pop-up: {e}")
+                    logging.info("Tidak ada tombol 'Next' lagi.")
+                    break
 
-        # Menunggu tombol presensi utama muncul dan dapat diklik
+            # Cari tombol Finish / Selesai
+            try:
+                finish_button = wait_for_popup.until(EC.element_to_be_clickable((By.XPATH,
+                    "//*[contains(text(),'Finish') or contains(text(),'Selesai') or .//i[contains(@class,'fa-flag-checkered')] or contains(@class,'btn-finish')]"
+                )))
+                finish_button.click()
+                logging.info("🏁 Klik Finish/Selesai.")
+            except TimeoutException:
+                logging.info("⚠️ Tidak menemukan tombol Finish, lanjutkan tanpa menutup popup.")
+
+        except Exception as e:
+            logging.warning(f"Gagal menangani popup: {e}")
+
+        # Cari tombol presensi
         logging.info("⏳ Menunggu tombol presensi utama...")
         presensi_button = WebDriverWait(driver, 30).until(
-            EC.element_to_be_clickable((By.XPATH, "//a[contains(@class, 'btn-presensi')] | //a[contains(@href, '/presensi')]"))
+            EC.element_to_be_clickable((By.XPATH, "//a[contains(@class,'btn-presensi')] | //a[contains(@href,'/presensi')]"))
         )
-        
         logging.info("✅ Tombol presensi utama ditemukan.")
         presensi_button.click()
         logging.info("✅ Klik: Tombol Presensi Utama.")
         time.sleep(5)
 
-        # Cek apakah presensi berhasil
+        # Cek berhasil/tidak
         try:
-            success_message = WebDriverWait(driver, 10).until(
-                EC.visibility_of_element_located((By.XPATH, "//*[contains(text(), 'Presensi berhasil') or contains(text(), 'Anda telah melakukan presensi')]"))
+            WebDriverWait(driver, 10).until(
+                EC.visibility_of_element_located((By.XPATH,
+                    "//*[contains(text(),'Presensi berhasil') or contains(text(),'Anda telah melakukan presensi')]"
+                ))
             )
             logging.info("🎉 Presensi berhasil!")
         except TimeoutException:
-            logging.warning("⚠️ Pesan konfirmasi presensi tidak ditemukan. Mungkin presensi gagal atau pesan berbeda.")
+            logging.warning("⚠️ Pesan konfirmasi presensi tidak ditemukan.")
 
-    except TimeoutException as e:
-        logging.error(f"❌ Timeout: Elemen tidak ditemukan dalam waktu yang ditentukan.")
-    except NoSuchElementException as e:
-        logging.error(f"❌ Elemen tidak ditemukan: {e}")
     except Exception as e:
-        logging.error(f"❌ Terjadi kesalahan tak terduga: {e}")
+        logging.error(f"❌ Terjadi kesalahan: {e}")
     finally:
-        if driver:
-            logging.info("🚪 Keluar dari browser.")
-            driver.quit()
+        logging.info("🚪 Keluar dari browser.")
+        driver.quit()
 
 if __name__ == "__main__":
     main()
