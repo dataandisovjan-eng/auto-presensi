@@ -1,93 +1,142 @@
 import os
-import sys
 import time
-import argparse
 import logging
 from datetime import datetime
 from selenium import webdriver
 from selenium.webdriver.common.by import By
+from selenium.webdriver.chrome.service import Service
+from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
-from selenium.webdriver.chrome.options import Options
+from webdriver_manager.chrome import ChromeDriverManager
 
-# ===============================
-# Setup logging ke console + file
-# ===============================
-log_filename = f"presensi_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
+
+# =======================
+# Setup Logging
+# =======================
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s",
-    handlers=[
-        logging.StreamHandler(sys.stdout),
-        logging.FileHandler(log_filename, mode="w", encoding="utf-8")
-    ]
+    datefmt="%Y-%m-%d %H:%M:%S"
 )
-logger = logging.getLogger(__name__)
 
-# ===============================
-# Fungsi presensi
-# ===============================
-def do_presensi(mode):
-    username = os.getenv("USER1_USERNAME") or os.getenv("USER1") or os.getenv("ANDI_USERNAME")
-    password = os.getenv("USER1_PASSWORD") or os.getenv("PASS1") or os.getenv("ANDI_PASSWORD")
 
-    if not username or not password:
-        logger.error("❌ Username/Password tidak ditemukan di secrets!")
-        sys.exit(1)
+# =======================
+# Secrets Loader
+# =======================
+def get_credentials(user_alias="USER1"):
+    """
+    Ambil username & password dari GitHub Secrets.
+    Mencoba beberapa kemungkinan nama secrets.
+    """
+    alternatives = [
+        (f"{user_alias}_USERNAME", f"{user_alias}_PASSWORD"),
+        (f"{user_alias}_USER", f"{user_alias}_PASS"),
+        (f"{user_alias}_ID", f"{user_alias}_PWD"),
+        (f"{user_alias}_NPK", f"{user_alias}_PASSWORD"),
+        (f"{user_alias}_USERNAME", f"{user_alias}_PASS"),
+    ]
 
-    logger.info(f"✅ Kredensial ditemukan. Mencoba login sebagai: {username}")
+    for user_key, pass_key in alternatives:
+        username = os.getenv(user_key)
+        password = os.getenv(pass_key)
+        if username and password:
+            logging.info(f"✅ Kredensial ditemukan pakai {user_key}/{pass_key}")
+            return username, password
 
+    logging.error(f"❌ Username/Password tidak ditemukan di secrets untuk {user_alias}!")
+    return None, None
+
+
+# =======================
+# Selenium Presensi
+# =======================
+def presensi(username, password, mode="check_in"):
+    logging.info("⚙️ Mengatur driver...")
     chrome_options = Options()
-    chrome_options.add_argument("--headless=new")
     chrome_options.add_argument("--no-sandbox")
     chrome_options.add_argument("--disable-dev-shm-usage")
+    chrome_options.add_argument("--headless=new")
 
-    logger.info("⚙️ Mengatur driver...")
-    driver = webdriver.Chrome(options=chrome_options)
+    driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=chrome_options)
     wait = WebDriverWait(driver, 15)
 
     try:
-        driver.get("https://dani.perhutani.co.id/login")
-        logger.info("🌐 Buka halaman login...")
+        logging.info("🌐 Buka halaman login...")
+        driver.get("https://dani.perhutani.co.id/")
 
-        # Isi username
-        wait.until(EC.presence_of_element_located((By.NAME, "npk"))).send_keys(username)
-        wait.until(EC.presence_of_element_located((By.NAME, "password"))).send_keys(password)
+        # Input NPK
+        logging.info("🔎 Cari field NPK...")
+        npk_field = wait.until(EC.presence_of_element_located((By.ID, "npk")))
+        npk_field.send_keys(username)
 
-        # Klik login
-        wait.until(EC.element_to_be_clickable((By.CSS_SELECTOR, "button[type='submit']"))).click()
-        logger.info("✅ Klik tombol login.")
+        # Input Password
+        pwd_field = driver.find_element(By.ID, "password")
+        pwd_field.send_keys(password)
 
-        # Tunggu tombol presensi
-        logger.info("⏳ Menunggu tombol presensi utama...")
-        presensi_btn = wait.until(EC.element_to_be_clickable((By.CSS_SELECTOR, "a[href*='presensi']")))
+        # Klik tombol login
+        login_btn = driver.find_element(By.XPATH, "//button[contains(., 'Login')]")
+        login_btn.click()
+        logging.info("✅ Klik tombol login.")
 
-        # Klik presensi
-        presensi_btn.click()
-        logger.info(f"✅ Klik tombol presensi untuk {mode}.")
-
-        # Tunggu notifikasi
+        # Tunggu pop-up jika ada
+        logging.info("🔎 Mencari pop-up untuk ditutup...")
+        time.sleep(5)
         try:
-            notif = wait.until(EC.presence_of_element_located((By.CLASS_NAME, "swal2-popup")))
-            logger.info(f"📢 Pesan notifikasi: {notif.text}")
-        except:
-            logger.warning("⚠️ Pesan konfirmasi presensi tidak ditemukan.")
-            screenshot_file = f"presensi_notif_missing_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png"
-            driver.save_screenshot(screenshot_file)
-            logger.info(f"📸 Screenshot disimpan: {screenshot_file}")
+            next_buttons = driver.find_elements(By.XPATH, "//button[contains(., 'Next')]")
+            for idx, btn in enumerate(next_buttons, 1):
+                btn.click()
+                logging.info(f"⏭️ Klik Next (total: {idx})")
+                time.sleep(1)
+        except Exception:
+            logging.info("⚠️ Tidak menemukan tombol Finish, lanjut.")
+
+        # Hapus modal kalau masih ada
+        logging.info("🛑 Periksa modal/pop-up aktif...")
+        try:
+            driver.execute_script("""
+                let modal = document.querySelector('#announcement');
+                if (modal) { modal.remove(); }
+            """)
+            logging.info("❎ Modal dihapus pakai JS.")
+        except Exception:
+            logging.info("ℹ️ Tidak ada modal aktif.")
+
+        # Tunggu tombol presensi utama
+        logging.info("⏳ Menunggu tombol presensi utama...")
+        presensi_btn = wait.until(EC.element_to_be_clickable((By.XPATH, "//a[contains(@href, 'presensi')]")))
+        presensi_btn.click()
+        logging.info("✅ Klik: Tombol Presensi Utama.")
+
+        # Tunggu pesan notifikasi
+        try:
+            notif = wait.until(EC.presence_of_element_located((By.CLASS_NAME, "swal2-title")))
+            logging.info(f"🎉 Presensi berhasil: {notif.text}")
+        except Exception:
+            logging.warning("⚠️ Pesan konfirmasi presensi tidak ditemukan.")
+            filename = f"presensi_notif_missing_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png"
+            driver.save_screenshot(filename)
+            logging.info(f"📸 Screenshot disimpan: {filename}")
 
     except Exception as e:
-        logger.error(f"❌ Terjadi kesalahan: {e}")
+        logging.error(f"❌ Terjadi kesalahan: {e}")
     finally:
+        logging.info("🚪 Keluar dari browser.")
         driver.quit()
-        logger.info("🚪 Keluar dari browser.")
 
-# ===============================
-# Main entry
-# ===============================
+
+# =======================
+# Main Execution
+# =======================
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--mode", choices=["check_in", "check_out"], required=True)
-    args = parser.parse_args()
+    logging.info("⏰ Mulai proses presensi...")
 
-    do_presensi(args.mode)
+    # Ambil kredensial (contoh pakai USER1 → Andi)
+    username, password = get_credentials("USER1")
+    if not username or not password:
+        exit(1)
+
+    # Jalankan presensi
+    presensi(username, password, mode="check_in")
+
+    logging.info("✅ Selesai.")
