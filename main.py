@@ -4,6 +4,8 @@ import time
 import logging
 from datetime import datetime
 from zoneinfo import ZoneInfo
+import psutil
+import uuid
 from selenium import webdriver
 from selenium.webdriver.chrome.service import Service as ChromeService
 from selenium.webdriver.common.by import By
@@ -32,9 +34,17 @@ logging.basicConfig(
 def setup_driver():
     logging.info("⚙️ Mengatur driver...")
     try:
+        # Bersihkan semua proses Chrome/Chromedriver yang mungkin tertinggal
+        for proc in psutil.process_iter(['pid', 'name']):
+            try:
+                if 'chrome' in proc.info['name'].lower() or 'chromedriver' in proc.info['name'].lower():
+                    proc.kill()
+            except Exception:
+                pass
+
         chrome_options = webdriver.ChromeOptions()
-        # Aktifkan ini di server headless seperti GitHub Actions
-        # chrome_options.add_argument("--headless")
+        # Aktifkan mode headless di server / GitHub Actions
+        chrome_options.add_argument("--headless")
         chrome_options.add_argument("--disable-gpu")
         chrome_options.add_argument("--no-sandbox")
         chrome_options.add_argument("--disable-dev-shm-usage")
@@ -50,7 +60,7 @@ def setup_driver():
         logging.error(f"❌ Gagal mengatur driver: {e}")
         return None
 
-# === Fungsi inti presensi ===
+# === Fungsi Inti Presensi ===
 def attempt_presensi(username, password, mode):
     url_login = "https://dani.perhutani.co.id/login"
     driver = setup_driver()
@@ -61,7 +71,7 @@ def attempt_presensi(username, password, mode):
         driver.get(url_login)
         wait = WebDriverWait(driver, 30)
 
-        # Hapus modal popup jika ada
+        # Hapus modal popup announcement jika ada
         try:
             modal = driver.find_element(By.ID, "announcement")
             if modal.is_displayed():
@@ -70,7 +80,7 @@ def attempt_presensi(username, password, mode):
         except Exception:
             pass
 
-        # Login
+        # === Login ===
         logging.info("🔎 Cari field login...")
         username_input = wait.until(EC.presence_of_element_located(
             (By.XPATH, "//input[@placeholder='NPK' or contains(@name,'username') or contains(@id,'username')]")
@@ -88,13 +98,15 @@ def attempt_presensi(username, password, mode):
         login_button.click()
         logging.info("✅ Klik tombol login.")
 
-        # Tutup popup intro jika ada
+        # === Tutup popup Next / Finish jika ada ===
         try:
             next_count = 0
             while True:
                 try:
                     next_button = WebDriverWait(driver, 3).until(
-                        EC.element_to_be_clickable((By.XPATH, "//*[contains(text(),'Next') or contains(text(),'Selanjutnya')]"))
+                        EC.element_to_be_clickable(
+                            (By.XPATH, "//*[contains(text(),'Next') or contains(text(),'Selanjutnya')]")
+                        )
                     )
                     next_button.click()
                     next_count += 1
@@ -104,7 +116,9 @@ def attempt_presensi(username, password, mode):
                     break
             try:
                 finish_button = WebDriverWait(driver, 5).until(
-                    EC.element_to_be_clickable((By.XPATH, "//*[contains(text(),'Finish') or contains(text(),'Selesai')]"))
+                    EC.element_to_be_clickable(
+                        (By.XPATH, "//*[contains(text(),'Finish') or contains(text(),'Selesai')]")
+                    )
                 )
                 finish_button.click()
                 logging.info("🏁 Klik Finish.")
@@ -113,7 +127,7 @@ def attempt_presensi(username, password, mode):
         except Exception as e:
             logging.warning(f"⚠️ Popup tidak tertutup sempurna: {e}")
 
-        # Buka menu presensi
+        # === Masuk ke halaman presensi ===
         presensi_button = WebDriverWait(driver, 20).until(
             EC.element_to_be_clickable((By.XPATH, "//a[contains(@href,'/presensi')]"))
         )
@@ -127,7 +141,7 @@ def attempt_presensi(username, password, mode):
         logging.info("⏳ Menunggu halaman presensi terbuka...")
         time.sleep(8)
 
-        # Klik tombol oranye presensi
+        # === Klik tombol oranye presensi ===
         try:
             orange_button = WebDriverWait(driver, 15).until(
                 EC.element_to_be_clickable((
@@ -146,7 +160,7 @@ def attempt_presensi(username, password, mode):
 
         time.sleep(3)
 
-        # Klik tombol popup
+        # === Klik tombol presensi di popup ===
         try:
             popup_button = WebDriverWait(driver, 15).until(
                 EC.element_to_be_clickable((By.XPATH, "//button[contains(text(),'Klik Disini Untuk Presensi')]"))
@@ -158,7 +172,7 @@ def attempt_presensi(username, password, mode):
             driver.save_screenshot(f"artifacts/presensi_popup_missing_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png")
             return False
 
-        # Verifikasi berhasil
+        # === Validasi berhasil ===
         try:
             WebDriverWait(driver, 10).until(
                 EC.visibility_of_element_located((
