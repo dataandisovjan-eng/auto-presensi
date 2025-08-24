@@ -32,7 +32,7 @@ logging.basicConfig(
 
 # === Setup Driver ===
 def setup_driver():
-    logging.info("⚙️ Mengatur driver...")
+    logging.info("⚙️ Mengatur driver dengan izin lokasi...")
     try:
         # Bunuh semua proses Chrome/Chromedriver yang tertinggal
         for proc in psutil.process_iter(['pid', 'name']):
@@ -47,6 +47,13 @@ def setup_driver():
         chrome_options.add_argument(f"--user-data-dir={unique_profile}")
         chrome_options.add_argument(f"--profile-directory=Profile_{int(time.time())}")
 
+        # Aktifkan izin lokasi
+        prefs = {
+            "profile.default_content_setting_values.geolocation": 1
+        }
+        chrome_options.add_experimental_option("prefs", prefs)
+
+        # Opsi tambahan
         chrome_options.add_argument("--no-first-run")
         chrome_options.add_argument("--no-default-browser-check")
         chrome_options.add_argument("--disable-gpu")
@@ -65,7 +72,7 @@ def setup_driver():
         logging.error(f"❌ Gagal mengatur driver: {e}")
         return None
 
-# === Simpan HTML & Screenshot ===
+# === Simpan Debug HTML & Screenshot ===
 def save_debug(driver, name):
     timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
     html_path = f"artifacts/{name}_{timestamp}.html"
@@ -75,7 +82,7 @@ def save_debug(driver, name):
     driver.save_screenshot(screenshot_path)
     logging.info(f"💾 Debug halaman disimpan: {html_path} & {screenshot_path}")
 
-# === Fungsi Utama Presensi ===
+# === Fungsi Presensi ===
 def attempt_presensi(username, password, mode):
     url_login = "https://dani.perhutani.co.id/login"
     driver = setup_driver()
@@ -144,12 +151,8 @@ def attempt_presensi(username, password, mode):
         presensi_button = WebDriverWait(driver, 20).until(
             EC.element_to_be_clickable((By.XPATH, "//a[contains(@href,'/presensi')]"))
         )
-        try:
-            presensi_button.click()
-            logging.info("✅ Klik menu Presensi.")
-        except ElementClickInterceptedException:
-            driver.execute_script("arguments[0].click();", presensi_button)
-            logging.info("✅ Klik menu Presensi via JS.")
+        driver.execute_script("arguments[0].click();", presensi_button)
+        logging.info("✅ Klik menu Presensi.")
 
         logging.info("⏳ Menunggu halaman presensi terbuka...")
         time.sleep(8)
@@ -174,20 +177,20 @@ def attempt_presensi(username, password, mode):
 
         time.sleep(3)
 
-        # === Klik tombol presensi di popup ===
+        # === Klik tombol popup presensi ===
         logging.info("🔍 Mencari tombol presensi di popup...")
         try:
-            time.sleep(2)  # Tambahan waktu render popup
-            # Jika ada iframe dalam popup, masuk ke iframe
-            iframes = driver.find_elements(By.TAG_NAME, "iframe")
-            if iframes:
-                driver.switch_to.frame(iframes[0])
-                logging.info("🔄 Berpindah ke iframe popup.")
+            time.sleep(3)  # Tambahan delay render popup
+            try:
+                driver.find_element(By.XPATH, "//*[contains(text(),'Belum Mengijinkan')]")
+                logging.warning("⚠️ Pesan lokasi muncul, abaikan dan lanjut.")
+            except:
+                logging.info("✅ Tidak ada pesan lokasi, lanjut.")
 
             popup_button = WebDriverWait(driver, 25).until(
                 EC.element_to_be_clickable((
                     By.XPATH,
-                    "//div[contains(@class,'modal') or contains(@class,'swal2-popup')]//*[contains(.,'Klik Disini Untuk Presensi')]"
+                    "//button[contains(.,'Klik Disini Untuk Presensi')]"
                 ))
             )
             driver.execute_script("arguments[0].scrollIntoView(true);", popup_button)
@@ -195,11 +198,6 @@ def attempt_presensi(username, password, mode):
             driver.execute_script("arguments[0].click();", popup_button)
             logging.info("✅ Klik tombol presensi di popup berhasil.")
             time.sleep(5)
-
-            if iframes:
-                driver.switch_to.default_content()
-                logging.info("↩️ Kembali ke frame utama.")
-
         except TimeoutException:
             logging.error("❌ Tombol popup presensi tidak ditemukan.")
             save_debug(driver, "presensi_popup_missing")
