@@ -1,161 +1,116 @@
-import os
 import sys
+import os
 import time
 import logging
-from datetime import datetime, timedelta
-from zoneinfo import ZoneInfo
-
+from datetime import datetime
 from selenium import webdriver
 from selenium.webdriver.chrome.service import Service as ChromeService
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
-from selenium.common.exceptions import TimeoutException, NoSuchElementException, WebDriverException, ElementClickInterceptedException
+from selenium.common.exceptions import TimeoutException, NoSuchElementException, WebDriverException
 
-# === Konfigurasi Logging ===
-os.makedirs("artifacts", exist_ok=True)
-log_filename = f"artifacts/presensi_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(message)s",
-    datefmt="%Y-%m-%d %H:%M:%S",
-    handlers=[
-        logging.FileHandler(log_filename, mode="a", encoding="utf-8"),
-        logging.StreamHandler(sys.stdout),
-    ],
-)
+# Konfigurasi logging
+log_filename = f"presensi_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
+logging.basicConfig(level=logging.INFO,
+                    format="%(asctime)s [%(levelname)s] %(message)s",
+                    datefmt="%Y-%m-%d %H:%M:%S",
+                    handlers=[
+                        logging.FileHandler(log_filename, mode="a", encoding="utf-8"),
+                        logging.StreamHandler(sys.stdout)
+                    ])
 
-# === Setup Driver ===
 def setup_driver():
-    logging.info("⚙️ Mengatur driver...")
+    """Setup Chrome WebDriver."""
     try:
+        logging.info("⚙️ Mengatur driver...")
         chrome_options = webdriver.ChromeOptions()
         chrome_options.add_argument("--headless")
         chrome_options.add_argument("--disable-gpu")
         chrome_options.add_argument("--no-sandbox")
         chrome_options.add_argument("--disable-dev-shm-usage")
         chrome_options.add_argument("--window-size=1920,1080")
-        chrome_options.add_experimental_option("prefs", {"profile.default_content_setting_values.notifications": 2})
-
+        chrome_options.add_experimental_option("prefs", {
+            "profile.default_content_setting_values.notifications": 2,
+            "profile.default_content_setting_values.geolocation": 1  # izinkan lokasi otomatis
+        })
         service = ChromeService()
         driver = webdriver.Chrome(service=service, options=chrome_options)
-        driver.set_page_load_timeout(120)
+        driver.set_page_load_timeout(90)
         logging.info("✅ Driver siap.")
         return driver
     except WebDriverException as e:
         logging.error(f"❌ Gagal mengatur driver: {e}")
         return None
 
-# === Fungsi Login & Presensi ===
-def login_and_presensi(username, password, mode="check_in"):
+def presensi(user: str, username: str, password: str):
+    """Proses presensi untuk user tertentu."""
     url_login = "https://dani.perhutani.co.id/login"
     driver = setup_driver()
     if not driver:
-        return
+        return False
 
     try:
-        driver.get(url_login)
         wait = WebDriverWait(driver, 30)
+        logging.info(f"🌐 [{user}] Membuka halaman login...")
+        driver.get(url_login)
 
-        # === Hapus modal popup announcement jika ada ===
-        try:
-            modal = driver.find_element(By.ID, "announcement")
-            if modal.is_displayed():
-                driver.execute_script("arguments[0].remove();", modal)
-                logging.info("❎ Modal login dihapus pakai JS.")
-        except Exception:
-            pass
-
-        # === Cari input NPK & Password ===
-        logging.info("🔎 Cari field login...")
-        username_input = wait.until(EC.presence_of_element_located(
-            (By.XPATH, "//input[@placeholder='NPK' or contains(@name,'username') or contains(@id,'username')]")
-        ))
-        password_input = wait.until(EC.presence_of_element_located(
-            (By.XPATH, "//input[@placeholder='Password' or @type='password']")
-        ))
-
+        # Login
+        username_input = wait.until(EC.presence_of_element_located((By.XPATH, "//input[@placeholder='NPK']")))
+        password_input = wait.until(EC.presence_of_element_located((By.XPATH, "//input[@placeholder='Password']")))
         username_input.send_keys(username)
         password_input.send_keys(password)
 
-        # Klik tombol login
         login_button = wait.until(EC.element_to_be_clickable(
-            (By.XPATH, "//button[contains(text(),'Login') or contains(text(),'Masuk') or @type='submit']")
-        ))
+            (By.XPATH, "//button[contains(text(),'Login') or contains(text(),'Masuk') or @type='submit']")))
         login_button.click()
-        logging.info("✅ Klik tombol login.")
+        logging.info(f"🔐 [{user}] Login dikirim.")
 
-        # === Tutup popup Next/Finish ===
-        try:
-            next_count = 0
-            while True:
-                try:
-                    next_button = WebDriverWait(driver, 3).until(EC.element_to_be_clickable(
-                        (By.XPATH, "//*[contains(text(),'Next') or contains(text(),'Selanjutnya')]")
-                    ))
-                    next_button.click()
-                    next_count += 1
-                    logging.info(f"⏭️ Klik Next ({next_count})")
-                    time.sleep(1)
-                except TimeoutException:
-                    break
-            try:
-                finish_button = WebDriverWait(driver, 5).until(EC.element_to_be_clickable(
-                    (By.XPATH, "//*[contains(text(),'Finish') or contains(text(),'Selesai')]")
-                ))
-                finish_button.click()
-                logging.info("🏁 Klik Finish.")
-            except TimeoutException:
-                logging.info("⚠️ Tidak menemukan tombol Finish, lanjut.")
-        except Exception as e:
-            logging.warning(f"⚠️ Popup tidak tertutup sempurna: {e}")
-
-        # === Klik tombol presensi utama ===
-        presensi_button = WebDriverWait(driver, 20).until(
-            EC.element_to_be_clickable((By.XPATH, "//a[contains(@href,'/presensi')]"))
+        # Tunggu tombol presensi utama
+        logging.info(f"⏳ [{user}] Menunggu tombol presensi utama...")
+        presensi_button = WebDriverWait(driver, 30).until(
+            EC.element_to_be_clickable((By.XPATH, "//a[contains(text(),'Klik Disini Untuk Presensi')]"))
         )
-        try:
-            presensi_button.click()
-            logging.info("✅ Klik tombol presensi utama.")
-        except ElementClickInterceptedException:
-            driver.execute_script("arguments[0].click();", presensi_button)
-            logging.info("✅ Klik tombol presensi dengan JS.")
+        presensi_button.click()
+        logging.info(f"🟠 [{user}] Klik tombol presensi utama.")
 
-        time.sleep(5)
-        # === Validasi berhasil ===
+        time.sleep(3)
+
+        # Jika muncul popup, klik tombol presensi di dalam popup
         try:
-            success_message = WebDriverWait(driver, 10).until(
-                EC.visibility_of_element_located((By.XPATH, "//*[contains(text(),'Presensi berhasil') or contains(text(),'Anda telah melakukan presensi')]"))
+            popup_button = WebDriverWait(driver, 5).until(
+                EC.element_to_be_clickable((By.XPATH, "//*[contains(text(),'Klik Disini Untuk Presensi')]"))
             )
-            logging.info("🎉 Presensi berhasil!")
+            popup_button.click()
+            logging.info(f"🟠 [{user}] Klik tombol presensi di popup.")
         except TimeoutException:
-            logging.warning("⚠️ Pesan konfirmasi presensi tidak ditemukan.")
-            screenshot_name = f"artifacts/presensi_notif_missing_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png"
-            driver.save_screenshot(screenshot_name)
-            logging.info(f"📸 Screenshot disimpan: {screenshot_name}")
+            logging.info(f"ℹ️ [{user}] Tidak ada popup presensi tambahan.")
+
+        # Verifikasi Check In / Check Out berhasil
+        try:
+            confirm = WebDriverWait(driver, 10).until(
+                EC.presence_of_element_located((By.XPATH, "//*[contains(text(),'Sudah Check In') or contains(text(),'Sudah Check Out')]"))
+            )
+            logging.info(f"🎉 [{user}] Presensi berhasil: {confirm.text}")
+        except TimeoutException:
+            # Screenshot jika gagal menemukan konfirmasi
+            screenshot_file = f"presensi_notif_missing_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png"
+            driver.save_screenshot(screenshot_file)
+            logging.warning(f"⚠️ [{user}] Konfirmasi presensi tidak ditemukan. Screenshot: {screenshot_file}")
 
     except Exception as e:
-        logging.error(f"❌ Terjadi kesalahan: {e}")
-        screenshot_name = f"artifacts/presensi_error_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png"
-        driver.save_screenshot(screenshot_name)
-        logging.info(f"📸 Screenshot error disimpan: {screenshot_name}")
+        logging.error(f"❌ [{user}] Terjadi kesalahan: {e}")
+        return False
     finally:
         driver.quit()
-        logging.info("🚪 Keluar dari browser.")
+        logging.info(f"🚪 [{user}] Keluar dari browser.")
 
-# === Main ===
+    return True
+
 def main():
-    tz = ZoneInfo("Asia/Jakarta")
-    now = datetime.now(tz)
     logging.info("⏰ Mulai proses presensi...")
 
-    mode = os.environ.get("FORCE_MODE", "").strip()
-    if not mode:
-        if now.hour < 12:
-            mode = "check_in"
-        else:
-            mode = "check_out"
-
+    # Ambil kredensial dari Secrets
     username = os.environ.get("USER1_USERNAME")
     password = os.environ.get("USER1_PASSWORD")
 
@@ -163,7 +118,11 @@ def main():
         logging.error("❌ Username/Password tidak ditemukan di secrets untuk USER1!")
         sys.exit(1)
 
-    login_and_presensi(username, password, mode)
+    success = presensi("USER1", username, password)
+    if success:
+        logging.info("✅ Presensi selesai dengan sukses.")
+    else:
+        logging.error("❌ Presensi gagal.")
 
 if __name__ == "__main__":
     main()
