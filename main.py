@@ -34,26 +34,30 @@ logging.basicConfig(
 def setup_driver():
     logging.info("⚙️ Mengatur driver...")
     try:
-        # Hentikan proses Chrome yang mungkin masih berjalan
+        # Bunuh semua proses Chrome/Chromedriver yang masih berjalan
         for proc in psutil.process_iter(['pid', 'name']):
             try:
-                if 'chrome' in proc.info['name'].lower() or 'chromedriver' in proc.info['name'].lower():
+                if proc.info['name'] and ('chrome' in proc.info['name'].lower() or 'chromedriver' in proc.info['name'].lower()):
                     proc.kill()
             except Exception:
                 pass
 
         chrome_options = webdriver.ChromeOptions()
-        # Gunakan direktori profil unik untuk menghindari konflik
-        temp_profile = tempfile.mkdtemp(prefix="chrome_profile_")
-        chrome_options.add_argument(f"--user-data-dir={temp_profile}")
 
-        # Opsi untuk stabilitas
-        # chrome_options.add_argument("--headless")  # Aktifkan jika tidak perlu GUI
+        # Gunakan direktori profil unik setiap run
+        unique_profile = tempfile.mkdtemp(prefix="profile_")
+        chrome_options.add_argument(f"--user-data-dir={unique_profile}")
+        chrome_options.add_argument(f"--profile-directory=Profile_{int(time.time())}")
+
+        # Flags untuk menghindari konflik & crash
+        chrome_options.add_argument("--no-first-run")
+        chrome_options.add_argument("--no-default-browser-check")
         chrome_options.add_argument("--disable-gpu")
         chrome_options.add_argument("--no-sandbox")
         chrome_options.add_argument("--disable-dev-shm-usage")
         chrome_options.add_argument("--window-size=1920,1080")
         chrome_options.add_argument("--disable-notifications")
+        chrome_options.add_argument("--headless=new")  # Headless stabil
 
         service = ChromeService()
         driver = webdriver.Chrome(service=service, options=chrome_options)
