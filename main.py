@@ -28,7 +28,7 @@ logging.basicConfig(
 
 # === Setup Driver ===
 def setup_driver():
-    logging.info("⚙️ Mengatur driver dengan izin lokasi...")
+    logging.info("⚙️ Mengatur driver dengan override geolocation...")
     try:
         # Bunuh proses Chrome/Chromedriver yang tertinggal
         for proc in psutil.process_iter(['pid', 'name']):
@@ -43,7 +43,7 @@ def setup_driver():
         chrome_options.add_argument(f"--user-data-dir={unique_profile}")
         chrome_options.add_argument(f"--profile-directory=Profile_{int(time.time())}")
 
-        # Aktifkan izin lokasi otomatis
+        # Izin lokasi otomatis
         prefs = {"profile.default_content_setting_values.geolocation": 1}
         chrome_options.add_experimental_option("prefs", prefs)
 
@@ -61,26 +61,36 @@ def setup_driver():
         driver = webdriver.Chrome(service=service, options=chrome_options)
         driver.set_page_load_timeout(120)
 
-        # Simulasi lokasi dummy (ganti koordinat sesuai lokasi kantor)
-        set_dummy_location(driver)
+        # Inject JavaScript ke setiap halaman baru
+        driver.execute_cdp_cmd("Page.addScriptToEvaluateOnNewDocument", {
+            "source": """
+                // Override geolocation API
+                navigator.geolocation.getCurrentPosition = function(success, error) {
+                    success({
+                        coords: {
+                            latitude: -7.250445,   // Dummy lokasi Surabaya
+                            longitude: 112.768845, // Dummy lokasi Surabaya
+                            accuracy: 50
+                        }
+                    });
+                };
+                navigator.geolocation.watchPosition = function(success, error) {
+                    success({
+                        coords: {
+                            latitude: -7.250445,
+                            longitude: 112.768845,
+                            accuracy: 50
+                        }
+                    });
+                };
+            """
+        })
 
-        logging.info("✅ Driver siap.")
+        logging.info("📍 Geolocation override berhasil diinject.")
         return driver
     except WebDriverException as e:
         logging.error(f"❌ Gagal mengatur driver: {e}")
         return None
-
-def set_dummy_location(driver):
-    """Atur lokasi dummy ke Chrome DevTools."""
-    try:
-        driver.execute_cdp_cmd("Emulation.setGeolocationOverride", {
-            "latitude": -7.250445,    # Contoh Surabaya
-            "longitude": 112.768845,  # Contoh Surabaya
-            "accuracy": 100
-        })
-        logging.info("📍 Lokasi dummy diaktifkan.")
-    except Exception as e:
-        logging.warning(f"⚠️ Gagal mengatur lokasi dummy: {e}")
 
 # === Simpan Debug HTML & Screenshot ===
 def save_debug(driver, name):
@@ -195,8 +205,7 @@ def attempt_presensi(username, password, mode):
             if lat_value and long_value:
                 break
             else:
-                logging.warning("⚠️ Koordinat belum terisi, injeksi ulang lokasi...")
-                set_dummy_location(driver)
+                logging.warning("⚠️ Koordinat belum terisi, tunggu 3 detik...")
                 time.sleep(3)
 
         # === Klik tombol popup presensi ===
