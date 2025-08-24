@@ -34,7 +34,7 @@ logging.basicConfig(
 def setup_driver():
     logging.info("⚙️ Mengatur driver dengan izin lokasi...")
     try:
-        # Bunuh semua proses Chrome/Chromedriver yang tertinggal
+        # Bunuh proses Chrome/Chromedriver yang tertinggal
         for proc in psutil.process_iter(['pid', 'name']):
             try:
                 if proc.info['name'] and ('chrome' in proc.info['name'].lower() or 'chromedriver' in proc.info['name'].lower()):
@@ -47,7 +47,7 @@ def setup_driver():
         chrome_options.add_argument(f"--user-data-dir={unique_profile}")
         chrome_options.add_argument(f"--profile-directory=Profile_{int(time.time())}")
 
-        # Aktifkan izin lokasi
+        # Aktifkan izin lokasi otomatis
         prefs = {
             "profile.default_content_setting_values.geolocation": 1
         }
@@ -66,6 +66,18 @@ def setup_driver():
         service = ChromeService()
         driver = webdriver.Chrome(service=service, options=chrome_options)
         driver.set_page_load_timeout(120)
+
+        # Simulasi lokasi dummy (ubah sesuai titik lokasi kantor)
+        try:
+            driver.execute_cdp_cmd("Emulation.setGeolocationOverride", {
+                "latitude": -7.250445,    # Contoh lokasi Surabaya
+                "longitude": 112.768845,  # Contoh lokasi Surabaya
+                "accuracy": 100
+            })
+            logging.info("📍 Lokasi dummy diaktifkan.")
+        except Exception as e:
+            logging.warning(f"⚠️ Gagal mengatur lokasi dummy: {e}")
+
         logging.info("✅ Driver siap.")
         return driver
     except WebDriverException as e:
@@ -177,16 +189,19 @@ def attempt_presensi(username, password, mode):
 
         time.sleep(3)
 
+        # === Cek koordinat sebelum klik popup presensi ===
+        try:
+            lat_value = driver.execute_script("return document.getElementById('result_lat')?.value;")
+            long_value = driver.execute_script("return document.getElementById('result_long')?.value;")
+            logging.info(f"📍 Koordinat terdeteksi: lat={lat_value}, long={long_value}")
+            if not lat_value or not long_value:
+                logging.warning("⚠️ Koordinat GPS belum terisi, mencoba klik tombol tetap.")
+        except Exception:
+            logging.warning("⚠️ Tidak bisa membaca nilai GPS di form.")
+
         # === Klik tombol popup presensi ===
         logging.info("🔍 Mencari tombol presensi di popup...")
         try:
-            time.sleep(3)  # Tambahan delay render popup
-            try:
-                driver.find_element(By.XPATH, "//*[contains(text(),'Belum Mengijinkan')]")
-                logging.warning("⚠️ Pesan lokasi muncul, abaikan dan lanjut.")
-            except:
-                logging.info("✅ Tidak ada pesan lokasi, lanjut.")
-
             popup_button = WebDriverWait(driver, 25).until(
                 EC.element_to_be_clickable((
                     By.XPATH,
