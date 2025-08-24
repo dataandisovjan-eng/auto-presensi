@@ -2,7 +2,6 @@ import os
 import sys
 import time
 import logging
-from tempfile import mkdtemp
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
@@ -36,7 +35,8 @@ def setup_driver():
     try:
         chrome_options = webdriver.ChromeOptions()
 
-        # Nonaktifkan headless untuk debug, aktifkan jika sudah stabil
+        # Nonaktifkan headless untuk debug lokal
+        # Aktifkan "--headless" saat di GitHub Actions
         # chrome_options.add_argument("--headless")
         chrome_options.add_argument("--disable-gpu")
         chrome_options.add_argument("--no-sandbox")
@@ -44,10 +44,7 @@ def setup_driver():
         chrome_options.add_argument("--window-size=1920,1080")
         chrome_options.add_argument("--disable-notifications")
 
-        # Direktori unik untuk menghindari konflik
-        user_data_dir = mkdtemp()
-        chrome_options.add_argument(f"--user-data-dir={user_data_dir}")
-
+        # Tidak menggunakan user-data-dir agar tidak bentrok
         service = ChromeService()
         driver = webdriver.Chrome(service=service, options=chrome_options)
         driver.set_page_load_timeout(120)
