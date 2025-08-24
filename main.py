@@ -44,12 +44,12 @@ def setup_driver():
 
         chrome_options = webdriver.ChromeOptions()
 
-        # Gunakan direktori profil unik setiap run
+        # Profil unik setiap eksekusi
         unique_profile = tempfile.mkdtemp(prefix="profile_")
         chrome_options.add_argument(f"--user-data-dir={unique_profile}")
         chrome_options.add_argument(f"--profile-directory=Profile_{int(time.time())}")
 
-        # Flags untuk menghindari konflik & crash
+        # Flags tambahan untuk stabilitas
         chrome_options.add_argument("--no-first-run")
         chrome_options.add_argument("--no-default-browser-check")
         chrome_options.add_argument("--disable-gpu")
@@ -57,7 +57,7 @@ def setup_driver():
         chrome_options.add_argument("--disable-dev-shm-usage")
         chrome_options.add_argument("--window-size=1920,1080")
         chrome_options.add_argument("--disable-notifications")
-        chrome_options.add_argument("--headless=new")  # Headless stabil
+        chrome_options.add_argument("--headless=new")
 
         service = ChromeService()
         driver = webdriver.Chrome(service=service, options=chrome_options)
@@ -68,7 +68,7 @@ def setup_driver():
         logging.error(f"❌ Gagal mengatur driver: {e}")
         return None
 
-# === Simpan HTML & Screenshot untuk debug ===
+# === Simpan HTML & Screenshot ===
 def save_debug(driver, name):
     timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
     html_path = f"artifacts/{name}_{timestamp}.html"
@@ -89,7 +89,7 @@ def attempt_presensi(username, password, mode):
         driver.get(url_login)
         wait = WebDriverWait(driver, 30)
 
-        # Hapus modal popup jika ada
+        # Hilangkan modal login jika ada
         try:
             modal = driver.find_element(By.ID, "announcement")
             if modal.is_displayed():
@@ -160,7 +160,7 @@ def attempt_presensi(username, password, mode):
         time.sleep(8)
 
         # === Cari tombol presensi utama ===
-        logging.info("🔍 Mencari tombol presensi oranye...")
+        logging.info("🔍 Mencari tombol presensi oranye di halaman utama...")
         try:
             orange_button = WebDriverWait(driver, 20).until(
                 EC.element_to_be_clickable((
@@ -179,13 +179,20 @@ def attempt_presensi(username, password, mode):
 
         time.sleep(3)
 
-        # === Klik tombol popup ===
+        # === Klik tombol popup presensi ===
+        logging.info("🔍 Mencari tombol presensi di dalam popup...")
         try:
-            popup_button = WebDriverWait(driver, 15).until(
-                EC.element_to_be_clickable((By.XPATH, "//button[contains(text(),'Klik Disini Untuk Presensi')]"))
+            popup_button = WebDriverWait(driver, 20).until(
+                EC.element_to_be_clickable((
+                    By.XPATH,
+                    "//div[contains(@class,'modal')]//button[contains(.,'Klik Disini') or contains(.,'Presensi')]"
+                ))
             )
+            driver.execute_script("arguments[0].scrollIntoView(true);", popup_button)
+            time.sleep(1)
             driver.execute_script("arguments[0].click();", popup_button)
-            logging.info("✅ Klik tombol presensi pada popup.")
+            logging.info("✅ Klik tombol presensi di popup berhasil.")
+            time.sleep(5)  # Beri jeda agar sistem memproses klik
         except TimeoutException:
             logging.error("❌ Tombol popup presensi tidak ditemukan.")
             save_debug(driver, "presensi_popup_missing")
