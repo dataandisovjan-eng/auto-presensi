@@ -1,31 +1,41 @@
 name: Presensi Otomatis
 
 on:
+  # Menjalankan workflow secara manual
   workflow_dispatch:
     inputs:
       force_mode:
-        description: "Mode presensi (check_in / check_out)"
+        description: "Mode presensi (check_in / check_out). Kosongkan untuk otomatis."
         required: false
         default: ""
+
+  # Menjalankan otomatis sesuai jadwal
   schedule:
-    - cron: '30 22 * * *'   # Jam 05:30 WIB (check-in)
-    - cron: '5 9 * * *'     # Jam 16:05 WIB (check-out)
+    - cron: '30 22 * * *'   # 05:30 WIB (Check-in)
+    - cron: '5 9 * * *'     # 16:05 WIB (Check-out)
 
 jobs:
   presensi:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout repo
+      # Checkout repository
+      - name: Checkout repository
         uses: actions/checkout@v4
 
+      # Setup Python
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
 
+      # Install dependencies
       - name: Install dependencies
-        run: pip install -r requirements.txt
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install psutil  # install tambahan untuk kill proses chrome
 
+      # Jalankan presensi
       - name: Run Presensi
         env:
           USER1_USERNAME: ${{ secrets.USER1_USERNAME }}
@@ -33,6 +43,7 @@ jobs:
           FORCE_MODE: ${{ github.event.inputs.force_mode }}
         run: python main.py
 
+      # Upload log dan screenshot untuk debug
       - name: Upload artifacts (log & screenshot)
         uses: actions/upload-artifact@v4
         with:
