@@ -35,7 +35,8 @@ def setup_driver():
     logging.info("⚙️ Mengatur driver...")
     try:
         chrome_options = webdriver.ChromeOptions()
-        chrome_options.add_argument("--headless")
+        # Nonaktifkan headless untuk debug, hapus komentar jika ingin melihat proses
+        # chrome_options.add_argument("--headless")
         chrome_options.add_argument("--disable-gpu")
         chrome_options.add_argument("--no-sandbox")
         chrome_options.add_argument("--disable-dev-shm-usage")
@@ -127,23 +128,32 @@ def login_and_presensi(username, password, mode="check_in"):
             driver.execute_script("arguments[0].click();", presensi_button)
             logging.info("✅ Klik tombol menu Presensi dengan JS.")
 
-        # Tunggu halaman terbuka penuh
-        time.sleep(5)
+        logging.info("⏳ Menunggu halaman presensi terbuka sepenuhnya...")
+        time.sleep(8)
 
-        # === Klik tombol oranye di halaman utama ===
-        try:
-            orange_button = WebDriverWait(driver, 20).until(
-                EC.element_to_be_clickable((
-                    By.XPATH,
-                    "//div[contains(text(),'Klik Disini Untuk Presensi') or contains(@class,'btn') or contains(@class,'orange')]"
-                ))
-            )
+        # === Cari dan klik tombol oranye di halaman utama ===
+        orange_button = None
+        for attempt in range(3):
+            try:
+                orange_button = WebDriverWait(driver, 10).until(
+                    EC.element_to_be_clickable((
+                        By.XPATH,
+                        "//div[contains(@class,'text-center') and contains(.,'Klik Disini Untuk Presensi')]"
+                    ))
+                )
+                logging.info(f"✅ Tombol presensi ditemukan (percobaan {attempt+1}).")
+                break
+            except TimeoutException:
+                logging.warning(f"⏳ Tombol presensi belum muncul (percobaan {attempt+1}). Menunggu ulang...")
+                time.sleep(5)
+
+        if orange_button:
             driver.execute_script("arguments[0].scrollIntoView(true);", orange_button)
             time.sleep(1)
             driver.execute_script("arguments[0].click();", orange_button)
             logging.info("✅ Klik tombol presensi oranye di halaman utama.")
-        except TimeoutException:
-            logging.error("❌ Tombol presensi oranye tidak ditemukan di halaman utama.")
+        else:
+            logging.error("❌ Tombol presensi oranye tetap tidak ditemukan setelah 3 kali percobaan.")
             screenshot_name = f"artifacts/presensi_button_missing_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png"
             driver.save_screenshot(screenshot_name)
             logging.info(f"📸 Screenshot disimpan: {screenshot_name}")
