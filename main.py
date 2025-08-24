@@ -5,7 +5,6 @@ import logging
 from datetime import datetime
 from zoneinfo import ZoneInfo
 import psutil
-import uuid
 from selenium import webdriver
 from selenium.webdriver.chrome.service import Service as ChromeService
 from selenium.webdriver.common.by import By
@@ -21,7 +20,7 @@ from selenium.common.exceptions import (
 os.makedirs("artifacts", exist_ok=True)
 log_filename = f"artifacts/presensi_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
 logging.basicConfig(
-    level=logging.INFO,
+    level=logging.DEBUG,  # LEVEL DEBUG UNTUK LOG LENGKAP
     format="%(asctime)s [%(levelname)s] %(message)s",
     datefmt="%Y-%m-%d %H:%M:%S",
     handlers=[
@@ -34,7 +33,7 @@ logging.basicConfig(
 def setup_driver():
     logging.info("⚙️ Mengatur driver...")
     try:
-        # Bersihkan semua proses Chrome/Chromedriver yang mungkin tertinggal
+        # Bersihkan proses Chrome yang mungkin tertinggal
         for proc in psutil.process_iter(['pid', 'name']):
             try:
                 if 'chrome' in proc.info['name'].lower() or 'chromedriver' in proc.info['name'].lower():
@@ -43,8 +42,8 @@ def setup_driver():
                 pass
 
         chrome_options = webdriver.ChromeOptions()
-        # Aktifkan mode headless di server / GitHub Actions
-        chrome_options.add_argument("--headless")
+        # Aktifkan headless jika di server, nonaktifkan jika debug lokal
+        # chrome_options.add_argument("--headless")
         chrome_options.add_argument("--disable-gpu")
         chrome_options.add_argument("--no-sandbox")
         chrome_options.add_argument("--disable-dev-shm-usage")
@@ -60,6 +59,16 @@ def setup_driver():
         logging.error(f"❌ Gagal mengatur driver: {e}")
         return None
 
+# === Fungsi untuk simpan debug halaman ===
+def save_debug(driver, name):
+    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+    html_path = f"artifacts/{name}_{timestamp}.html"
+    screenshot_path = f"artifacts/{name}_{timestamp}.png"
+    with open(html_path, "w", encoding="utf-8") as f:
+        f.write(driver.page_source)
+    driver.save_screenshot(screenshot_path)
+    logging.info(f"💾 Debug halaman disimpan: {html_path} & {screenshot_path}")
+
 # === Fungsi Inti Presensi ===
 def attempt_presensi(username, password, mode):
     url_login = "https://dani.perhutani.co.id/login"
@@ -71,7 +80,7 @@ def attempt_presensi(username, password, mode):
         driver.get(url_login)
         wait = WebDriverWait(driver, 30)
 
-        # Hapus modal popup announcement jika ada
+        # Hapus modal popup jika ada
         try:
             modal = driver.find_element(By.ID, "announcement")
             if modal.is_displayed():
@@ -98,7 +107,7 @@ def attempt_presensi(username, password, mode):
         login_button.click()
         logging.info("✅ Klik tombol login.")
 
-        # === Tutup popup Next / Finish jika ada ===
+        # Tutup popup intro jika ada
         try:
             next_count = 0
             while True:
@@ -141,12 +150,13 @@ def attempt_presensi(username, password, mode):
         logging.info("⏳ Menunggu halaman presensi terbuka...")
         time.sleep(8)
 
-        # === Klik tombol oranye presensi ===
+        # === Debug jika tombol tidak ditemukan ===
+        logging.info("🔍 Mencari tombol presensi oranye...")
         try:
-            orange_button = WebDriverWait(driver, 15).until(
+            orange_button = WebDriverWait(driver, 20).until(
                 EC.element_to_be_clickable((
                     By.XPATH,
-                    "//div[contains(@class,'text-center') and (contains(.,'Klik Disini Untuk Presensi') or .//i or .//svg)]"
+                    "//div[contains(@class,'text-center') and (contains(text(),'Klik Disini') or contains(.,'Presensi'))]"
                 ))
             )
             driver.execute_script("arguments[0].scrollIntoView(true);", orange_button)
@@ -155,7 +165,7 @@ def attempt_presensi(username, password, mode):
             logging.info("✅ Klik tombol presensi oranye di halaman utama.")
         except TimeoutException:
             logging.error("❌ Tombol presensi oranye tidak ditemukan.")
-            driver.save_screenshot(f"artifacts/presensi_button_missing_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png")
+            save_debug(driver, "presensi_button_missing")
             return False
 
         time.sleep(3)
@@ -169,10 +179,10 @@ def attempt_presensi(username, password, mode):
             logging.info("✅ Klik tombol presensi pada popup.")
         except TimeoutException:
             logging.error("❌ Tombol popup presensi tidak ditemukan.")
-            driver.save_screenshot(f"artifacts/presensi_popup_missing_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png")
+            save_debug(driver, "presensi_popup_missing")
             return False
 
-        # === Validasi berhasil ===
+        # === Verifikasi berhasil ===
         try:
             WebDriverWait(driver, 10).until(
                 EC.visibility_of_element_located((
@@ -184,18 +194,18 @@ def attempt_presensi(username, password, mode):
             return True
         except TimeoutException:
             logging.warning("⚠️ Pesan konfirmasi presensi tidak ditemukan.")
-            driver.save_screenshot(f"artifacts/presensi_notif_missing_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png")
+            save_debug(driver, "presensi_notif_missing")
             return False
 
     except Exception as e:
         logging.error(f"❌ Terjadi kesalahan: {e}")
-        driver.save_screenshot(f"artifacts/presensi_error_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png")
+        save_debug(driver, "presensi_error")
         return False
     finally:
         driver.quit()
         logging.info("🚪 Keluar dari browser.")
 
-# === Main dengan retry otomatis ===
+# === Main ===
 def main():
     tz = ZoneInfo("Asia/Jakarta")
     now = datetime.now(tz)
