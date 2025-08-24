@@ -66,19 +66,15 @@ def setup_driver():
         )
 
         # Inject API geolocation agar otomatis mengembalikan dummy lokasi
-        driver.execute_cdp_cmd(
-            "Page.addScriptToEvaluateOnNewDocument",
-            {
-                "source": """
-                navigator.geolocation.getCurrentPosition = function(success, error){
-                    success({ coords: { latitude: -7.250445, longitude: 112.768845, accuracy: 50 } });
-                };
-                navigator.geolocation.watchPosition = function(success, error){
-                    success({ coords: { latitude: -7.250445, longitude: 112.768845, accuracy: 50 } });
-                };
-                """
-            }
-        )
+        geo_override = """
+        navigator.geolocation.getCurrentPosition = function(success, error){
+            success({ coords: { latitude: -7.250445, longitude: 112.768845, accuracy: 50 } });
+        };
+        navigator.geolocation.watchPosition = function(success, error){
+            success({ coords: { latitude: -7.250445, longitude: 112.768845, accuracy: 50 } });
+        };
+        """
+        driver.execute_cdp_cmd("Page.addScriptToEvaluateOnNewDocument", {"source": geo_override})
 
         logging.info("✅ Driver siap dengan lokasi dummy dan override API.")
         return driver
@@ -106,6 +102,16 @@ def attempt_presensi(username, password, mode):
     try:
         driver.get(url)
         wait = WebDriverWait(driver, 30)
+
+        # Inject ulang geolocation override setelah halaman load
+        driver.execute_cdp_cmd("Page.addScriptToEvaluateOnNewDocument", {"source": """
+            navigator.geolocation.getCurrentPosition = function(success, error){
+                success({ coords: { latitude: -7.250445, longitude: 112.768845, accuracy: 50 } });
+            };
+            navigator.geolocation.watchPosition = function(success, error){
+                success({ coords: { latitude: -7.250445, longitude: 112.768845, accuracy: 50 } });
+            };
+        """})
 
         # Login
         logging.info("🔎 Cari field login...")
@@ -148,8 +154,9 @@ def attempt_presensi(username, password, mode):
         logging.info("✅ Tombol presensi utama diklik.")
         time.sleep(3)
 
-        # Tunggu koordinat terisi
-        for i in range(3):
+        # Tunggu koordinat terisi lebih lama
+        lat = lon = None
+        for i in range(10):  # coba sampai 30 detik
             lat = driver.execute_script("return document.getElementById('result_lat')?.value;")
             lon = driver.execute_script("return document.getElementById('result_long')?.value;")
             logging.info(f"📍 Cek koordinat ke-{i+1}: lat={lat}, lon={lon}")
@@ -157,8 +164,15 @@ def attempt_presensi(username, password, mode):
                 break
             time.sleep(3)
 
-        # Klik tombol presensi di popup
-        popup_btn = wait.until(EC.element_to_be_clickable((By.XPATH, "//button[contains(text(),'Klik Disini Untuk Presensi')]")))
+        if not lat or not lon:
+            logging.error("❌ Koordinat tidak pernah terisi, hentikan proses.")
+            save_debug(driver, "presensi_lokasi_missing")
+            return False
+
+        # Klik tombol presensi di popup (lebih fleksibel, apapun tag-nya)
+        popup_btn = wait.until(
+            EC.element_to_be_clickable((By.XPATH, "//*[contains(text(),'Klik Disini Untuk Presensi')]"))
+        )
         driver.execute_script("arguments[0].click();", popup_btn)
         logging.info("✅ Tombol presensi popup diklik.")
         time.sleep(5)
