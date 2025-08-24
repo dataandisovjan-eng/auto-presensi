@@ -10,15 +10,15 @@ from selenium.common.exceptions import TimeoutException, WebDriverException
 
 BASE_URL = "https://dani.perhutani.co.id"
 
-# === Credentials ===
-NPK = os.getenv("NPK") or "180108011"
-PASSWORD = os.getenv("PASSWORD") or "syahputra18"
+# === Credentials (dibaca dari GitHub Secrets / env) ===
+NPK = os.getenv("NPK")
+PASSWORD = os.getenv("PASSWORD")
 
-# === Lokasi Dummy ===
+# === Lokasi Dummy (default jika env tidak ada) ===
 def _normalize_coord(s, limit):
     try:
         v = float(str(s).replace(",", "."))
-        if abs(v) > limit:
+        if abs(v) > limit:  # misal -7177347 -> -7.177347
             v = v / 1_000_000.0
         return v
     except Exception:
@@ -30,7 +30,7 @@ TS = int(time.time() * 1000)
 
 def setup_driver():
     chrome_opts = Options()
-    chrome_opts.add_argument("--headless=new")  # hapus jika mau lihat langsung
+    chrome_opts.add_argument("--headless=new")  # hapus baris ini kalau mau lihat browser
     chrome_opts.add_argument("--no-sandbox")
     chrome_opts.add_argument("--disable-dev-shm-usage")
     chrome_opts.add_argument("--disable-gpu")
@@ -47,7 +47,7 @@ def setup_driver():
     driver = webdriver.Chrome(options=chrome_opts)
     driver.set_page_load_timeout(120)
 
-    # Grant izin lokasi + set posisi dummy
+    # Grant izin lokasi
     driver.execute_cdp_cmd(
         "Browser.grantPermissions",
         {"origin": BASE_URL, "permissions": ["geolocation"]},
@@ -57,7 +57,7 @@ def setup_driver():
         {"latitude": LAT, "longitude": LON, "accuracy": 5},
     )
 
-    # Stub API navigator.geolocation supaya sukses otomatis
+    # Stub API geolocation agar success callback selalu terpanggil
     geoloc_js = f"""
         Object.defineProperty(navigator, 'geolocation', {{
           value: {{
@@ -89,7 +89,7 @@ def setup_driver():
         }});
     """
     driver.execute_cdp_cmd("Page.addScriptToEvaluateOnNewDocument", {"source": geoloc_js})
-    print(f"🌍 Lokasi dummy: lat={LAT}, lon={LON}")
+    print(f"🌍 Lokasi dummy aktif: lat={LAT}, lon={LON}")
     return driver
 
 def safe_wait_click(driver, locators, timeout=20):
@@ -103,6 +103,7 @@ def safe_wait_click(driver, locators, timeout=20):
                 el.click()
             except WebDriverException:
                 driver.execute_script("arguments[0].click();", el)
+            print(f"✅ Klik: {desc}")
             return True
         except Exception:
             continue
@@ -116,6 +117,7 @@ def switch_into_iframe_if_needed(driver):
         try:
             driver.switch_to.frame(fr)
             if "klik" in driver.page_source.lower():
+                print("ℹ️ Masuk ke iframe presensi")
                 return True
             driver.switch_to.default_content()
         except Exception:
@@ -137,7 +139,6 @@ def main():
         ).send_keys(PASSWORD)
 
         safe_wait_click(driver, [(By.XPATH, "//button[contains(.,'Login')]", "login")], timeout=20)
-        print("✅ Login berhasil")
 
         # Lewati wizard (Next/Finish)
         for _ in range(4):
@@ -151,11 +152,11 @@ def main():
         time.sleep(2)
         switch_into_iframe_if_needed(driver)
 
-        # Lokator tombol "Klik Disini Untuk Presensi"
+        # Lokator tombol presensi
         tombol_locators = [
-            (By.XPATH, "//button[contains(.,'Klik Disini')]", "btn"),
-            (By.XPATH, "//a[contains(.,'Klik Disini')]", "a"),
-            (By.XPATH, "//div[contains(.,'Klik Disini')]", "div"),
+            (By.XPATH, "//button[contains(.,'Klik Disini')]", "btn-presensi"),
+            (By.XPATH, "//a[contains(.,'Klik Disini')]", "a-presensi"),
+            (By.XPATH, "//div[contains(.,'Klik Disini')]", "div-presensi"),
         ]
 
         if safe_wait_click(driver, tombol_locators, timeout=30):
@@ -178,7 +179,7 @@ def main():
         with open(f"page_source_{ts_str}.html", "w", encoding="utf-8") as f:
             f.write(driver.page_source)
         driver.save_screenshot(f"screenshot_{ts_str}.png")
-        print(f"❌ Error: {e}\n🧩 Dump disimpan: page_source_{ts_str}.html & screenshot_{ts_str}.png")
+        print(f"❌ Error: {e}\n🧩 Debug disimpan: page_source_{ts_str}.html & screenshot_{ts_str}.png")
     finally:
         dur = (datetime.now() - t0).total_seconds()
         print(f"⏱️ Durasi: {dur:.1f}s")
