@@ -11,11 +11,7 @@ from selenium.webdriver.chrome.service import Service as ChromeService
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
-from selenium.common.exceptions import (
-    TimeoutException,
-    WebDriverException,
-    ElementClickInterceptedException
-)
+from selenium.common.exceptions import TimeoutException, WebDriverException
 
 # === Logging ===
 os.makedirs("artifacts", exist_ok=True)
@@ -48,9 +44,7 @@ def setup_driver():
         chrome_options.add_argument(f"--profile-directory=Profile_{int(time.time())}")
 
         # Aktifkan izin lokasi otomatis
-        prefs = {
-            "profile.default_content_setting_values.geolocation": 1
-        }
+        prefs = {"profile.default_content_setting_values.geolocation": 1}
         chrome_options.add_experimental_option("prefs", prefs)
 
         # Opsi tambahan
@@ -67,22 +61,26 @@ def setup_driver():
         driver = webdriver.Chrome(service=service, options=chrome_options)
         driver.set_page_load_timeout(120)
 
-        # Simulasi lokasi dummy (ubah sesuai titik lokasi kantor)
-        try:
-            driver.execute_cdp_cmd("Emulation.setGeolocationOverride", {
-                "latitude": -7.250445,    # Contoh lokasi Surabaya
-                "longitude": 112.768845,  # Contoh lokasi Surabaya
-                "accuracy": 100
-            })
-            logging.info("📍 Lokasi dummy diaktifkan.")
-        except Exception as e:
-            logging.warning(f"⚠️ Gagal mengatur lokasi dummy: {e}")
+        # Simulasi lokasi dummy (ganti koordinat sesuai lokasi kantor)
+        set_dummy_location(driver)
 
         logging.info("✅ Driver siap.")
         return driver
     except WebDriverException as e:
         logging.error(f"❌ Gagal mengatur driver: {e}")
         return None
+
+def set_dummy_location(driver):
+    """Atur lokasi dummy ke Chrome DevTools."""
+    try:
+        driver.execute_cdp_cmd("Emulation.setGeolocationOverride", {
+            "latitude": -7.250445,    # Contoh Surabaya
+            "longitude": 112.768845,  # Contoh Surabaya
+            "accuracy": 100
+        })
+        logging.info("📍 Lokasi dummy diaktifkan.")
+    except Exception as e:
+        logging.warning(f"⚠️ Gagal mengatur lokasi dummy: {e}")
 
 # === Simpan Debug HTML & Screenshot ===
 def save_debug(driver, name):
@@ -189,15 +187,17 @@ def attempt_presensi(username, password, mode):
 
         time.sleep(3)
 
-        # === Cek koordinat sebelum klik popup presensi ===
-        try:
+        # === Pastikan koordinat terisi sebelum klik popup presensi ===
+        for attempt in range(3):
             lat_value = driver.execute_script("return document.getElementById('result_lat')?.value;")
             long_value = driver.execute_script("return document.getElementById('result_long')?.value;")
-            logging.info(f"📍 Koordinat terdeteksi: lat={lat_value}, long={long_value}")
-            if not lat_value or not long_value:
-                logging.warning("⚠️ Koordinat GPS belum terisi, mencoba klik tombol tetap.")
-        except Exception:
-            logging.warning("⚠️ Tidak bisa membaca nilai GPS di form.")
+            logging.info(f"📍 Koordinat deteksi ke-{attempt+1}: lat={lat_value}, long={long_value}")
+            if lat_value and long_value:
+                break
+            else:
+                logging.warning("⚠️ Koordinat belum terisi, injeksi ulang lokasi...")
+                set_dummy_location(driver)
+                time.sleep(3)
 
         # === Klik tombol popup presensi ===
         logging.info("🔍 Mencari tombol presensi di popup...")
