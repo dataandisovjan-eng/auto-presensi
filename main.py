@@ -2,6 +2,7 @@ import os
 import sys
 import time
 import logging
+from tempfile import mkdtemp
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
@@ -12,7 +13,6 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import (
     TimeoutException,
-    NoSuchElementException,
     WebDriverException,
     ElementClickInterceptedException
 )
@@ -35,15 +35,18 @@ def setup_driver():
     logging.info("⚙️ Mengatur driver...")
     try:
         chrome_options = webdriver.ChromeOptions()
-        # Nonaktifkan headless untuk debug, hapus komentar jika ingin melihat proses
+
+        # Nonaktifkan headless untuk debug, aktifkan jika sudah stabil
         # chrome_options.add_argument("--headless")
         chrome_options.add_argument("--disable-gpu")
         chrome_options.add_argument("--no-sandbox")
         chrome_options.add_argument("--disable-dev-shm-usage")
         chrome_options.add_argument("--window-size=1920,1080")
-        chrome_options.add_experimental_option(
-            "prefs", {"profile.default_content_setting_values.notifications": 2}
-        )
+        chrome_options.add_argument("--disable-notifications")
+
+        # Direktori unik untuk menghindari konflik
+        user_data_dir = mkdtemp()
+        chrome_options.add_argument(f"--user-data-dir={user_data_dir}")
 
         service = ChromeService()
         driver = webdriver.Chrome(service=service, options=chrome_options)
@@ -138,7 +141,7 @@ def login_and_presensi(username, password, mode="check_in"):
                 orange_button = WebDriverWait(driver, 10).until(
                     EC.element_to_be_clickable((
                         By.XPATH,
-                        "//div[contains(@class,'text-center') and contains(.,'Klik Disini Untuk Presensi')]"
+                        "//div[contains(@class,'text-center') and (contains(.,'Klik Disini Untuk Presensi') or .//i or .//svg)]"
                     ))
                 )
                 logging.info(f"✅ Tombol presensi ditemukan (percobaan {attempt+1}).")
