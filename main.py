@@ -1,10 +1,11 @@
 import os
 import sys
 import time
+import tempfile
+import psutil
 import logging
 from datetime import datetime
 from zoneinfo import ZoneInfo
-import psutil
 from selenium import webdriver
 from selenium.webdriver.chrome.service import Service as ChromeService
 from selenium.webdriver.common.by import By
@@ -16,11 +17,11 @@ from selenium.common.exceptions import (
     ElementClickInterceptedException
 )
 
-# === Konfigurasi Logging ===
+# === Logging ===
 os.makedirs("artifacts", exist_ok=True)
 log_filename = f"artifacts/presensi_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
 logging.basicConfig(
-    level=logging.DEBUG,  # LEVEL DEBUG UNTUK LOG LENGKAP
+    level=logging.DEBUG,
     format="%(asctime)s [%(levelname)s] %(message)s",
     datefmt="%Y-%m-%d %H:%M:%S",
     handlers=[
@@ -33,7 +34,7 @@ logging.basicConfig(
 def setup_driver():
     logging.info("⚙️ Mengatur driver...")
     try:
-        # Bersihkan proses Chrome yang mungkin tertinggal
+        # Hentikan proses Chrome yang mungkin masih berjalan
         for proc in psutil.process_iter(['pid', 'name']):
             try:
                 if 'chrome' in proc.info['name'].lower() or 'chromedriver' in proc.info['name'].lower():
@@ -42,8 +43,12 @@ def setup_driver():
                 pass
 
         chrome_options = webdriver.ChromeOptions()
-        # Aktifkan headless jika di server, nonaktifkan jika debug lokal
-        # chrome_options.add_argument("--headless")
+        # Gunakan direktori profil unik untuk menghindari konflik
+        temp_profile = tempfile.mkdtemp(prefix="chrome_profile_")
+        chrome_options.add_argument(f"--user-data-dir={temp_profile}")
+
+        # Opsi untuk stabilitas
+        # chrome_options.add_argument("--headless")  # Aktifkan jika tidak perlu GUI
         chrome_options.add_argument("--disable-gpu")
         chrome_options.add_argument("--no-sandbox")
         chrome_options.add_argument("--disable-dev-shm-usage")
@@ -59,7 +64,7 @@ def setup_driver():
         logging.error(f"❌ Gagal mengatur driver: {e}")
         return None
 
-# === Fungsi untuk simpan debug halaman ===
+# === Simpan HTML & Screenshot untuk debug ===
 def save_debug(driver, name):
     timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
     html_path = f"artifacts/{name}_{timestamp}.html"
@@ -69,7 +74,7 @@ def save_debug(driver, name):
     driver.save_screenshot(screenshot_path)
     logging.info(f"💾 Debug halaman disimpan: {html_path} & {screenshot_path}")
 
-# === Fungsi Inti Presensi ===
+# === Fungsi Utama Presensi ===
 def attempt_presensi(username, password, mode):
     url_login = "https://dani.perhutani.co.id/login"
     driver = setup_driver()
@@ -150,7 +155,7 @@ def attempt_presensi(username, password, mode):
         logging.info("⏳ Menunggu halaman presensi terbuka...")
         time.sleep(8)
 
-        # === Debug jika tombol tidak ditemukan ===
+        # === Cari tombol presensi utama ===
         logging.info("🔍 Mencari tombol presensi oranye...")
         try:
             orange_button = WebDriverWait(driver, 20).until(
@@ -170,7 +175,7 @@ def attempt_presensi(username, password, mode):
 
         time.sleep(3)
 
-        # === Klik tombol presensi di popup ===
+        # === Klik tombol popup ===
         try:
             popup_button = WebDriverWait(driver, 15).until(
                 EC.element_to_be_clickable((By.XPATH, "//button[contains(text(),'Klik Disini Untuk Presensi')]"))
