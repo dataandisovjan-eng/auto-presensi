@@ -1,151 +1,144 @@
 import os
-import sys
 import time
 import logging
-from datetime import datetime
 from selenium import webdriver
 from selenium.webdriver.chrome.service import Service as ChromeService
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
-from selenium.common.exceptions import TimeoutException
+from selenium.common.exceptions import TimeoutException, WebDriverException
 
-# ================== LOGGING ==================
-log_filename = f"presensi_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
+# ================== KONFIGURASI LOGGING ==================
+log_filename = f"presensi_{time.strftime('%Y%m%d_%H%M%S')}.log"
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
     handlers=[
-        logging.FileHandler(log_filename, encoding="utf-8"),
-        logging.StreamHandler(sys.stdout)
+        logging.FileHandler(log_filename, mode="a", encoding="utf-8"),
+        logging.StreamHandler()
     ]
 )
 
-# ================== DRIVER SETUP ==================
+# ================== SETUP DRIVER ==================
 def setup_driver():
-    chrome_options = webdriver.ChromeOptions()
-    chrome_options.add_argument("--headless")
-    chrome_options.add_argument("--no-sandbox")
-    chrome_options.add_argument("--disable-dev-shm-usage")
-    chrome_options.add_argument("--window-size=1920,1080")
-    chrome_options.add_argument("--disable-gpu")
-    service = ChromeService()
-    driver = webdriver.Chrome(service=service, options=chrome_options)
-    driver.set_page_load_timeout(90)
-    return driver
+    """Inisialisasi Chrome WebDriver."""
+    logging.info("⚙️ Mengatur driver...")
+    try:
+        chrome_options = webdriver.ChromeOptions()
+        chrome_options.add_argument("--headless=new")
+        chrome_options.add_argument("--disable-gpu")
+        chrome_options.add_argument("--no-sandbox")
+        chrome_options.add_argument("--disable-dev-shm-usage")
+        chrome_options.add_argument("--window-size=1920,1080")
+        chrome_options.add_argument("--log-level=3")
 
-# ================== PRESENSI FUNCTION ==================
-def do_presensi(user, username, password, mode="check_in"):
+        service = ChromeService()
+        driver = webdriver.Chrome(service=service, options=chrome_options)
+        driver.set_page_load_timeout(90)
+        logging.info("✅ Driver siap.")
+        return driver
+    except WebDriverException as e:
+        logging.error(f"❌ Gagal mengatur driver: {e}")
+        return None
+
+# ================== PROSES PRESENSI ==================
+def presensi(user: str, mode: str):
+    """
+    Jalankan proses presensi (check_in / check_out).
+    user: USER1, USER2, ...
+    mode: check_in atau check_out
+    """
     logging.info(f"⏰ Mulai proses presensi untuk {user} (mode: {mode})...")
 
+    username = os.environ.get(f"{user}_USERNAME")
+    password = os.environ.get(f"{user}_PASSWORD")
     if not username or not password:
         logging.error(f"❌ Username/Password tidak ditemukan di secrets untuk {user}!")
         return False
 
-    driver = None
+    driver = setup_driver()
+    if not driver:
+        return False
+
     try:
-        driver = setup_driver()
-        wait = WebDriverWait(driver, 30)
-
         # 1. Buka halaman login
+        url_login = "https://dani.perhutani.co.id/login"
         logging.info(f"🌐 [{user}] Membuka halaman login...")
-        driver.get("https://dani.perhutani.co.id/login")
+        driver.get(url_login)
 
-        # 2. Isi login
-        username_input = wait.until(EC.element_to_be_clickable(
-            (By.XPATH, "//input[@placeholder='NPK']")))
-        password_input = driver.find_element(By.XPATH, "//input[@placeholder='Password']")
-        username_input.send_keys(username)
-        password_input.send_keys(password)
-        login_btn = wait.until(EC.element_to_be_clickable(
-            (By.XPATH, "//button[contains(text(),'Login') or contains(text(),'Masuk')]")))
-        login_btn.click()
+        # 2. Input username & password
+        WebDriverWait(driver, 30).until(
+            EC.presence_of_element_located((By.XPATH, "//input[@placeholder='NPK']"))
+        ).send_keys(username)
+
+        driver.find_element(By.XPATH, "//input[@placeholder='Password']").send_keys(password)
+
+        login_button = driver.find_element(By.XPATH, "//button[contains(text(), 'Login') or @type='submit']")
+        login_button.click()
         logging.info(f"🔐 [{user}] Login dikirim.")
 
-        # 3. Tutup popup announcement jika ada
+        # 3. Hapus modal jika ada
+        time.sleep(2)
         try:
-            time.sleep(3)
             driver.execute_script("""
-                var modals=document.getElementsByClassName('modal');
-                for(var i=0;i<modals.length;i++){modals[i].remove();}
+                let modals = document.querySelectorAll('.modal.show, #announcement');
+                modals.forEach(m => m.remove());
             """)
             logging.info(f"❎ [{user}] Modal dihapus pakai JS.")
         except Exception:
-            pass
+            logging.info(f"ℹ️ [{user}] Tidak ada modal yang aktif.")
 
         # 4. Klik tombol presensi utama
-        presensi_btn = wait.until(EC.element_to_be_clickable((
-            By.XPATH, "//a[contains(.,'Presensi') or contains(@href,'presensi')] | //i[contains(@class,'fa-fingerprint')]"
-        )))
+        presensi_btn = WebDriverWait(driver, 30).until(
+            EC.element_to_be_clickable((By.XPATH, "//a[contains(@href, '/presensi')]"))
+        )
         presensi_btn.click()
         logging.info(f"✅ [{user}] Klik: Tombol Presensi Utama.")
 
-        # 5. Tunggu popup presensi
-        time.sleep(5)
-        try:
-            popup_btn = WebDriverWait(driver, 20).until(EC.element_to_be_clickable((
-                By.XPATH,
-                "//*[contains(text(),'Klik Disini Untuk Presensi') "
-                "or contains(@class,'btn-warning') "
-                "or contains(@class,'btn-presensi')]"
-            )))
-            popup_btn.click()
-            logging.info(f"🖱️ [{user}] Klik tombol popup presensi.")
-        except TimeoutException:
-            logging.error(f"❌ [{user}] Popup presensi tidak muncul.")
-            screenshot = f"presensi_popup_missing_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png"
-            driver.save_screenshot(screenshot)
-            logging.warning(f"📸 Screenshot disimpan: {screenshot}")
-            return False
+        # 5. Klik tombol popup presensi ("Klik Disini Untuk Presensi")
+        popup_btn = WebDriverWait(driver, 20).until(
+            EC.element_to_be_clickable((By.XPATH, "//*[contains(text(),'Klik Disini Untuk Presensi')]"))
+        )
+        popup_btn.click()
+        logging.info(f"🖱️ [{user}] Klik tombol popup presensi.")
 
-        # 6. Verifikasi keberhasilan → cek "Sudah Check In" atau "Sudah Check Out"
+        # 6. Verifikasi keberhasilan
         expected_text = "Sudah Check In" if mode == "check_in" else "Sudah Check Out"
+
         try:
-            success_elem = WebDriverWait(driver, 15).until(EC.presence_of_element_located((
-                By.XPATH, f"//*[contains(text(),'{expected_text}')]"
-            )))
+            success_elem = WebDriverWait(driver, 20).until(
+                EC.presence_of_element_located((By.XPATH, f"//*[contains(text(),'{expected_text}')]"))
+            )
             logging.info(f"🎉 [{user}] Presensi {mode} berhasil! Status: {success_elem.text.strip()}")
             return True
         except TimeoutException:
-            logging.warning(f"⚠️ [{user}] Tidak menemukan indikator keberhasilan ({expected_text}).")
-            screenshot = f"presensi_notif_missing_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png"
-            driver.save_screenshot(screenshot)
-            html_dump = f"presensi_notif_missing_{datetime.now().strftime('%Y%m%d_%H%M%S')}.html"
-            with open(html_dump, "w", encoding="utf-8") as f:
-                f.write(driver.page_source)
-            logging.warning(f"📸 Screenshot disimpan: {screenshot}")
-            logging.warning(f"📝 HTML halaman disimpan: {html_dump}")
+            page_text = driver.page_source
+            if mode == "check_out" and "Belum Check Out" in page_text:
+                logging.warning(f"⚠️ [{user}] Masih 'Belum Check Out' setelah klik, kemungkinan klik gagal.")
+            elif mode == "check_in" and "Sudah Check In" in page_text:
+                logging.warning(f"⚠️ [{user}] Sudah melakukan check in sebelumnya.")
+            else:
+                logging.warning(f"⚠️ [{user}] Tidak menemukan indikator keberhasilan ({expected_text}).")
             return False
 
     except Exception as e:
         logging.error(f"❌ [{user}] Terjadi kesalahan: {e}")
         return False
     finally:
-        if driver:
-            driver.quit()
-            logging.info(f"🚪 [{user}] Keluar dari browser.")
+        logging.info(f"🚪 [{user}] Keluar dari browser.")
+        driver.quit()
 
 # ================== MAIN ==================
 if __name__ == "__main__":
-    USERS = {
-        "USER1": {
-            "username": os.environ.get("USER1_USERNAME"),
-            "password": os.environ.get("USER1_PASSWORD")
-        }
-    }
+    mode = os.environ.get("MODE", "check_in")  # default check_in
+    users = ["USER1"]  # bisa tambah USER2, USER3 nanti
 
-    # Ambil mode presensi dari ENV, default check_in
-    MODE = os.environ.get("MODE", "check_in").lower()
+    all_success = True
+    for u in users:
+        success = presensi(u, mode)
+        if not success:
+            all_success = False
 
-    success = True
-    for key, creds in USERS.items():
-        if creds["username"] and creds["password"]:
-            ok = do_presensi(key, creds["username"], creds["password"], mode=MODE)
-            if not ok:
-                success = False
-        else:
-            logging.error(f"❌ Username/Password tidak ditemukan di secrets untuk {key}!")
-            success = False
-
-    if not success:
-        sys.exit(1)
+    if not all_success:
+        exit(1)
