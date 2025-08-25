@@ -10,7 +10,7 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException, WebDriverException
 
 # =============================
-# KONFIGURASI LOGGING
+# LOGGING
 # =============================
 log_filename = f"presensi_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
 logging.basicConfig(
@@ -81,13 +81,43 @@ def clear_modal(driver):
         pass
 
 # =============================
+# CARI DAN KLIK POPUP
+# =============================
+def click_popup(driver, attempt):
+    try:
+        popup_btn = WebDriverWait(driver, 10).until(EC.element_to_be_clickable((
+            By.XPATH,
+            "//*[contains(text(),'Klik Disini Untuk Presensi') or contains(text(),'Presensi') or @class='btn btn-warning']"
+        )))
+        popup_btn.click()
+        logging.info(f"🖱️ Klik tombol popup presensi (percobaan {attempt}).")
+        time.sleep(2)
+        return True
+    except TimeoutException:
+        logging.warning(f"⚠️ Popup presensi tidak muncul (percobaan {attempt}).")
+        clear_modal(driver)
+        time.sleep(2)
+        return False
+
+# =============================
+# CEK STATUS PRESENSI
+# =============================
+def get_status(driver):
+    try:
+        status_div = WebDriverWait(driver, 10).until(EC.presence_of_element_located((
+            By.XPATH, "//div[contains(text(),'Sudah Check In') or contains(text(),'Sudah Check Out')]"
+        )))
+        return status_div.text.strip()
+    except TimeoutException:
+        return None
+
+# =============================
 # PRESENSI
 # =============================
 def do_presensi(driver, username, mode):
     wait = WebDriverWait(driver, 20)
 
     try:
-        # tombol presensi utama
         presensi_btn = wait.until(EC.element_to_be_clickable(
             (By.XPATH, "//a[contains(@href,'/presensi') or contains(text(),'Presensi')]")
         ))
@@ -95,27 +125,30 @@ def do_presensi(driver, username, mode):
         logging.info("✅ Klik: Tombol Presensi Utama.")
         time.sleep(2)
 
-        # popup "Klik Disini Untuk Presensi"
-        try:
-            popup_btn = wait.until(EC.element_to_be_clickable((
-                By.XPATH, "//*[contains(text(),'Klik Disini Untuk Presensi') or contains(text(),'Presensi')]"
-            )))
-            popup_btn.click()
-            logging.info("🖱️ Klik tombol popup presensi.")
-            time.sleep(2)
-        except TimeoutException:
-            logging.error("❌ Popup presensi tidak muncul.")
-            return False
+        success = False
+        for attempt in range(1, 4):
+            if not click_popup(driver, attempt):
+                continue
 
-        # cek status
-        try:
-            status_div = wait.until(EC.presence_of_element_located((By.XPATH, "//div[contains(text(),'Sudah Check In') or contains(text(),'Sudah Check Out')]")))
-            status_text = status_div.text.strip()
-            logging.info(f"🎉 Presensi {mode} berhasil! Status: {status_text}")
-            return True
-        except TimeoutException:
-            logging.warning("⚠️ Tidak menemukan indikator keberhasilan.")
-            return False
+            status = get_status(driver)
+            if status:
+                logging.info(f"ℹ️ Status terdeteksi: {status}")
+                if mode == "check_in" and "Sudah Check In" in status:
+                    logging.info("🎉 Presensi check_in berhasil!")
+                    success = True
+                    break
+                elif mode == "check_out" and "Sudah Check Out" in status:
+                    logging.info("🎉 Presensi check_out berhasil!")
+                    success = True
+                    break
+                else:
+                    logging.warning(f"⚠️ Status belum sesuai mode {mode}, coba ulang...")
+                    time.sleep(2)
+            else:
+                logging.warning("⚠️ Tidak menemukan indikator status.")
+        if not success:
+            logging.error(f"❌ Presensi {mode} gagal setelah 3 percobaan.")
+        return success
 
     except Exception as e:
         logging.error(f"❌ Terjadi kesalahan: {e}")
@@ -128,7 +161,7 @@ def do_presensi(driver, username, mode):
 # MAIN
 # =============================
 if __name__ == "__main__":
-    mode = os.environ.get("MODE", "check_in")  # ambil dari workflow
+    mode = os.environ.get("MODE", "check_in")
     username = os.environ.get("USER1_USERNAME")
     password = os.environ.get("USER1_PASSWORD")
 
