@@ -109,15 +109,39 @@ def do_presensi(user, username, password, mode="check_in"):
 
         # 6. Verifikasi berhasil
         try:
-            WebDriverWait(driver, 10).until(EC.presence_of_element_located(
-                (By.XPATH, "//div[contains(@class,'card') and (contains(.,'Checkin') or contains(.,'Checkout')) and contains(@class,'bg-success')]")))
-            logging.info(f"🎉 [{user}] Presensi {mode} berhasil!")
+            success_elem = WebDriverWait(driver, 15).until(EC.presence_of_element_located((
+                By.XPATH,
+                "//*[contains(text(),'Presensi berhasil') or "
+                "contains(text(),'Anda telah melakukan presensi') or "
+                "contains(@class,'bg-success') or "
+                "contains(@class,'card') and (contains(.,'Checkin') or contains(.,'Checkout'))]"
+            )))
+            logging.info(f"🎉 [{user}] Presensi {mode} berhasil! Ditemukan elemen: {success_elem.text.strip()}")
             return True
         except TimeoutException:
             logging.warning(f"⚠️ [{user}] Tidak menemukan indikator keberhasilan.")
             screenshot = f"presensi_notif_missing_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png"
             driver.save_screenshot(screenshot)
+            # dump HTML untuk investigasi
+            html_dump = f"presensi_notif_missing_{datetime.now().strftime('%Y%m%d_%H%M%S')}.html"
+            with open(html_dump, "w", encoding="utf-8") as f:
+                f.write(driver.page_source)
             logging.warning(f"📸 Screenshot disimpan: {screenshot}")
+            logging.warning(f"📝 HTML halaman disimpan: {html_dump}")
+
+            # log teks semua tombol/div terkait
+            try:
+                all_buttons = driver.find_elements(By.TAG_NAME, "button")
+                all_divs = driver.find_elements(By.TAG_NAME, "div")
+                logging.info("🔎 Dump teks tombol/div terkait presensi:")
+                for b in all_buttons[:10]:
+                    logging.info(f"   [BTN] {b.text}")
+                for d in all_divs[:10]:
+                    if "presensi" in d.get_attribute("class") or "check" in d.text.lower():
+                        logging.info(f"   [DIV] {d.text.strip()}")
+            except Exception as e:
+                logging.warning(f"Gagal dump elemen tambahan: {e}")
+
             return False
 
     except Exception as e:
