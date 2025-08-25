@@ -8,7 +8,7 @@ from selenium.webdriver.chrome.service import Service as ChromeService
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
-from selenium.common.exceptions import TimeoutException, NoSuchElementException
+from selenium.common.exceptions import TimeoutException
 
 # ================== LOGGING ==================
 log_filename = f"presensi_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
@@ -56,58 +56,55 @@ def do_presensi(user, username, password, mode="check_in"):
         driver.get("https://dani.perhutani.co.id/login")
 
         # 2. Isi login
-        try:
-            username_input = wait.until(EC.element_to_be_clickable(
-                (By.XPATH, "//input[@placeholder='NPK']")))
-            password_input = driver.find_element(
-                By.XPATH, "//input[@placeholder='Password']")
-            username_input.send_keys(username)
-            password_input.send_keys(password)
-            login_btn = wait.until(EC.element_to_be_clickable(
-                (By.XPATH, "//button[contains(text(),'Login') or contains(text(),'Masuk')]")))
-            login_btn.click()
-            logging.info(f"🔐 [{user}] Login dikirim.")
-        except Exception as e:
-            logging.error(f"❌ [{user}] Gagal login: {e}")
-            return False
+        username_input = wait.until(EC.element_to_be_clickable(
+            (By.XPATH, "//input[@placeholder='NPK']")))
+        password_input = driver.find_element(
+            By.XPATH, "//input[@placeholder='Password']")
+        username_input.send_keys(username)
+        password_input.send_keys(password)
+        login_btn = wait.until(EC.element_to_be_clickable(
+            (By.XPATH, "//button[contains(text(),'Login') or contains(text(),'Masuk')]")))
+        login_btn.click()
+        logging.info(f"🔐 [{user}] Login dikirim.")
 
         # 3. Tutup popup announcement jika ada
         try:
             time.sleep(3)
-            modals = driver.find_elements(By.CLASS_NAME, "modal")
-            if modals:
-                driver.execute_script("""
-                    var modals=document.getElementsByClassName('modal');
-                    for(var i=0;i<modals.length;i++){modals[i].remove();}
-                """)
-                logging.info(f"❎ [{user}] Modal dihapus pakai JS.")
+            driver.execute_script("""
+                var modals=document.getElementsByClassName('modal');
+                for(var i=0;i<modals.length;i++){modals[i].remove();}
+            """)
+            logging.info(f"❎ [{user}] Modal dihapus pakai JS.")
         except Exception:
             pass
 
-        # 4. Tunggu tombol presensi utama
-        try:
-            presensi_btn = wait.until(EC.element_to_be_clickable(
-                (By.XPATH, "//a[contains(.,'Presensi') or contains(@href,'presensi')] | //i[contains(@class,'fa-fingerprint')]")))
-            presensi_btn.click()
-            logging.info(f"✅ [{user}] Klik: Tombol Presensi Utama.")
-        except TimeoutException:
-            logging.error(f"❌ [{user}] Tombol presensi utama tidak ditemukan.")
-            screenshot = f"presensi_btn_missing_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png"
-            driver.save_screenshot(screenshot)
-            logging.warning(f"📸 Screenshot disimpan: {screenshot}")
-            return False
+        # 4. Klik tombol presensi utama
+        presensi_btn = wait.until(EC.element_to_be_clickable(
+            (By.XPATH, "//a[contains(.,'Presensi') or contains(@href,'presensi')] | //i[contains(@class,'fa-fingerprint')]")))
+        presensi_btn.click()
+        logging.info(f"✅ [{user}] Klik: Tombol Presensi Utama.")
 
-        # 5. Tunggu popup presensi muncul
+        # 5. Tunggu popup presensi
+        time.sleep(5)  # kasih waktu popup muncul
         try:
-            popup_btn = WebDriverWait(driver, 20).until(EC.element_to_be_clickable(
-                (By.XPATH, "//button[contains(.,'Klik Disini Untuk Presensi')]")))
+            popup_btn = WebDriverWait(driver, 20).until(EC.element_to_be_clickable((
+                By.XPATH,
+                "//*[contains(text(),'Klik Disini Untuk Presensi') "
+                "or contains(@class,'btn-warning') "
+                "or contains(@class,'btn-presensi') "
+                "or contains(@class,'btn') and contains(.,'Presensi')]"
+            )))
             popup_btn.click()
             logging.info(f"🖱️ [{user}] Klik tombol popup presensi.")
         except TimeoutException:
             logging.error(f"❌ [{user}] Popup presensi tidak muncul.")
             screenshot = f"presensi_popup_missing_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png"
+            html_dump = f"presensi_popup_missing_{datetime.now().strftime('%Y%m%d_%H%M%S')}.html"
             driver.save_screenshot(screenshot)
+            with open(html_dump, "w", encoding="utf-8") as f:
+                f.write(driver.page_source)
             logging.warning(f"📸 Screenshot disimpan: {screenshot}")
+            logging.warning(f"📝 HTML halaman disimpan: {html_dump}")
             return False
 
         # 6. Verifikasi berhasil
@@ -137,10 +134,6 @@ if __name__ == "__main__":
         "USER1": {
             "username": os.environ.get("USER1_USERNAME"),
             "password": os.environ.get("USER1_PASSWORD")
-        },
-        "USER2": {
-            "username": os.environ.get("USER2_USERNAME"),
-            "password": os.environ.get("USER2_PASSWORD")
         }
     }
 
